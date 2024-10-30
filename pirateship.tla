@@ -332,12 +332,35 @@ ByzOmitEntries(r, p) ==
         ]
     /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
 
+\* Given an append entries message, returns the same message with the txn changed to 1
+ModifyAppendEntries(m) == [
+    type |-> "AppendEntries",
+    view |-> m.view,
+    log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
+        <<[Last(m.log) EXCEPT !.tx = 1]>>
+]
+
+
+\* We allow a byzantine primary to equivocate by changing the txn in an AppendEntries message
+ByzPrimaryEquivocate(p) ==
+    /\ p \in BR
+    /\ byzActions < MaxByzActions
+    /\ byzActions' = byzActions + 1
+    /\ \E r \in R:
+        /\ network[r][p] # <<>>
+        /\ Head(network[r][p]).type = "AppendEntries"
+        /\ Head(network[r][p]).log # <<>>
+        /\ network' = [network EXCEPT 
+            ![r][p][1] = ModifyAppendEntries(@)]
+    /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
+
 Next == 
     \E r \in R: 
         \/ SendEntries(r)
         \/ Timeout(r)
         \/ DiscardMessage(r)
         \/ BecomePrimary(r)
+        \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
