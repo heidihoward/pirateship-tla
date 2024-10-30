@@ -53,7 +53,7 @@ CQ == {q \in SUBSET R: Cardinality(q) >= 3}
 BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 
 \* Limit on Views
-Views == 0..3cambridge crashCommitIndex
+Views == 0..3
 
 \* Set of possible transactions
 Txs == 1..2
