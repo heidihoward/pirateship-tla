@@ -2,6 +2,7 @@
 \* This is a specification of the PirateShip consensus protocol.
 \* Message delivery is assumed to be ordered and reliable
 \* This spec does not model the fast path or reconfiguration
+\* We also assume all txns include signatures
 
 EXTENDS 
     Naturals, 
@@ -25,7 +26,7 @@ VARIABLE
     crashCommitIndex,
     \* byzantine commit index of each replica
     byzCommitIndex,
-    \* number of byzantine actions taken so far
+    \* total number of byzantine actions taken so far
     byzActions
 
 vars == <<
@@ -164,11 +165,13 @@ ReceiveEntries(r, p) ==
     /\ Head(network[r][p]).type = "AppendEntries"
     \* the replica must be in the same view
     /\ view[r] = Head(network[r][p]).view
-    \* the replica only appends one entry to its log
+    \* and must be replicating an entry from this view
+    /\ Last(Head(network[r][p]).log).view = view[r]
+    \* the replica only appends (one entry at a time) to its log
     /\ log[r] = Front(Head(network[r][p]).log)
-    \* for convenience, we replace the replica's log with the received log
+    \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
-    \* we message and reply with a vote
+    \* we remove the message and reply with a vote
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
