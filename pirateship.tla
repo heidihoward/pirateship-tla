@@ -453,7 +453,7 @@ RepeatedlyLeaderProp ==
     []<>(TRUE \in Range(primary))
 
 AllMessagesConsumedProp ==
-    <>(\A r, s \in R : network[r][s] = <<>>)
+    []<>(\A r, s \in R : network[r][s] = <<>>)
 
 IndexBoundsInv ==
     \A r \in HR :
