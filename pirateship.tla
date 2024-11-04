@@ -419,6 +419,14 @@ CommittedLogAppendOnlyProp ==
     [][\A i \in R :
         IsPrefix(Committed(i), Committed(i)')]_vars
 
+CrashCommitIndexMonotonic ==
+    [][\A r \in HR :
+            crashCommitIndex'[r] >= crashCommitIndex[r]]_vars
+
+ByzCommitIndexMonotonic ==
+    [][\A r \in HR :
+            byzCommitIndex'[r] >= byzCommitIndex[r]]_vars
+
 OneLeaderPerTermInv ==
     \A v \in Views, r \in HR :
         view[r] = v /\ primary[r] 
