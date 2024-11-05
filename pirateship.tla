@@ -410,7 +410,21 @@ Next ==
             \/ ReceiveNewLeader(r,s)
             \/ ByzOmitEntries(r,s)
 
-Spec == Init /\ [][Next]_vars
+Fairness ==
+    \* Only Timeout if there is no primary.
+    /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
+    /\ \A r \in HR: WF_vars(BecomePrimary(r))
+    /\ \A r \in HR: WF_vars(DiscardMessage(r))
+    /\ \A r \in HR: WF_vars(SendEntries(r))
+    /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+    \* Omit any byzantine actions from the fairness condition.
+
+Spec == 
+    /\ Init
+    /\ [][Next]_vars
+    /\ Fairness
 
 ----
 \* Properties
