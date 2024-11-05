@@ -499,4 +499,66 @@ MonitorPostcondition ==
 
 PrintMonitors ==
     Monitors!TLCPrintMonitors
+
+----
+
+\* The combination of three conditions — MaxMessages, MaxDivergence, and MonotonicReduction — along
+\* with the fact that there are only a finite number of unique log entries (since transactions are
+\* treated as opaque), is sufficient to constrain the state space and ensure verification safety and
+\* liveness properties.
+
+MaxMessages ==
+    \* There are at most 2 messages in transit between any pair of replicas.
+    \A r, s \in R :
+        Len(network[r][s]) <= 2
+
+Abs(n) ==
+    IF n >= 0 THEN n ELSE -n
+
+MaxDivergence ==
+    \* The log of a replica does not diverge from its committed log by more than 3 entries.
+    \A i, j \in R :
+        /\ Len(log[i]) - crashCommitIndex[i] <= 3  \* TODO This should be byzCommitIndex instead of crashCommitIndex
+
+MonotonicReduction ==
+    \* Drop the prefix of each log (variable log and messages) up to and including the common prefix bound, and
+    \* decrement the crashCommitIndex and byzCommitIndex accordingly.  Moreover, reduce the qc of each remaining
+    \* log entry.  The underlying assumption is that committed log entries have no relevance on the correctness
+    \* of the algorithm.
+    \* 
+    \* Moreover, this view causes TLC to assign the same hash/fingerprint to states such as:
+    \*    
+    \* /\ log = << <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>>>
+    \* /\ crashCommitIndex = <<1, 1, 1>>
+    \* /\ ...
+    \*    
+    \* /\ log = << <<[view |-> 0, tx |-> -1, qc |-> {0}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {0}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {0}]>> >>
+    \* /\ crashCommitIndex = <<0, 0, 0>>
+    \* /\ ...
+    \* 
+    \* As a side effect, this causes TLC to add extra arcs to its liveness graph, enabling us to verify liveness
+    \* properties. While this technique may be unsound, it is out best shot at checking liveness properties;
+    \* without those "artifical" arcs, TLC will not be able to verify any liveness properties.
+    LET commonPrefixBound == CHOOSE n \in Range(crashCommitIndex) : \A r \in HR : crashCommitIndex[r] >= n  \* TODO This should be byzCommitIndex instead of crashCommitIndex
+    IN IF commonPrefixBound = 0 
+       THEN vars
+       ELSE LET \* Drop the prefix of the log up to idx, and reduce the qc of each remaining log entry.
+                rQC(xlog, idx) == [ i \in 1..Len(xlog)-idx |-> 
+                                        [ xlog[i+idx] EXCEPT !.qc = { Max2(0, qc - idx) : qc \in @ } ] ]
+                rLog == [ r \in R |-> rQC(log[r], commonPrefixBound) ]
+                rNetwork == [ r \in R |-> [ s \in R |-> 
+                                [ i \in DOMAIN network[r][s] |-> 
+                                    [ network[r][s][i] EXCEPT !.log = rQC(@, commonPrefixBound) ] ] ] ]
+                rMmatchIndex == [ r \in R |-> [ s \in R |-> Max2(0, matchIndex[r][s] - commonPrefixBound) ] ]
+                rCrashCommitIndex == [ r \in R |-> Max2(0, crashCommitIndex[r] - commonPrefixBound) ]
+                rByzCommitIndex == [ r \in R |-> Max2(0, byzCommitIndex[r] - commonPrefixBound) ]
+            IN 
+            << rLog, rMmatchIndex, rCrashCommitIndex, rByzCommitIndex, rNetwork,
+                \* unchanged values.
+                view, primary, byzActions>>
+
 ====
