@@ -222,7 +222,7 @@ ReceiveVote(p, r) ==
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
     /\ view[r] = Head(network[p][r]).view
-    /\ \* match index only updated if the log entry is in the      current view, this means that the match index only updated in response to AppendEntries
+    /\ \* match index only updated if the log entry is in the current view, this means that the match index only updated in response to AppendEntries
         IF \/ Head(network[p][r]).log = <<>> 
            \/ Last(Head(network[p][r]).log).view # view[r]
         THEN UNCHANGED matchIndex
@@ -238,6 +238,14 @@ ReceiveVote(p, r) ==
 
 \* Like Max but returns a set
 MaxSet(S) == IF S = {} THEN {} ELSE {Max(S)}
+Max0(S) == IF S = {} THEN 0 ELSE Max(S)
+
+MaxQC(p) == 
+    LET MaxQuorum == 
+        Max0({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i})
+    IN IF MaxQuorum > Max0(UNION {log[p][i].qc : i \in DOMAIN log[p]})
+        THEN {MaxQuorum}
+        ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
 SendEntries(p) ==
@@ -248,7 +256,7 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
-            qc |-> MaxSet({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i} \ UNION {log[p][i].qc : i \in DOMAIN log[p]})])]
+            qc |-> MaxQC(p)])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -382,12 +390,15 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 ----
+\* Properties
 
 Committed(r) ==
     IF crashCommitIndex[r] = 0
     THEN << >>
     ELSE SubSeq(log[r], 1, crashCommitIndex[r])
 
+\* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
+\* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 LogInv ==
     byzActions = 0 =>
         \A i, j \in R :
