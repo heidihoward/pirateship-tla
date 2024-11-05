@@ -5,7 +5,7 @@
 \* We also assume all txns include signatures
 
 EXTENDS 
-    Naturals, 
+    Integers, 
     Sequences, 
     FiniteSets, 
     FiniteSetsExt, 
@@ -58,7 +58,7 @@ BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 Views == 0..3
 
 \* Set of possible transactions
-Txs == 1..2
+Txs == {-1,1}
 
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
@@ -251,7 +251,6 @@ MaxQC(p) ==
 SendEntries(p) ==
     /\ primary[p]
     /\ \E tx \in Txs:
-        /\ \A i \in DOMAIN log[p]: log[p][i].tx # tx
         /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
@@ -351,11 +350,11 @@ ByzOmitEntries(r, p) ==
     /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
-ModifyAppendEntries(m) == [
+ModifyAppendEntries(m, tx) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
+        <<[Last(m.log) EXCEPT !.tx = tx]>>
 ]
 
 
@@ -368,8 +367,8 @@ ByzPrimaryEquivocate(p) ==
         /\ network[r][p] # <<>>
         /\ Head(network[r][p]).type = "AppendEntries"
         /\ Head(network[r][p]).log # <<>>
-        /\ network' = [network EXCEPT 
-            ![r][p][1] = ModifyAppendEntries(@)]
+        /\ \E tx \in Txs:
+            network' = [network EXCEPT ![r][p][1] = ModifyAppendEntries(@, tx)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
 \* Next state relation
