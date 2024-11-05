@@ -40,6 +40,7 @@ vars == <<
     byzActions>>
 
 ----
+\* Model parameters
 
 \* Set of replicas
 R == 1..4
@@ -64,6 +65,7 @@ Txs == 1..2
 MaxByzActions == 2
 
 ----
+\* Variable types
 
 \* Number of replicas
 N == Cardinality(R)
@@ -128,6 +130,7 @@ TypeOK ==
     /\ byzActions \in Nat
 
 ----
+\* Initial states
 
 Init == 
     /\ view = [r \in R |-> 0]
@@ -140,6 +143,7 @@ Init ==
     /\ byzActions = 0
 
 ----
+\* Actions
 
 Extract(S) == CHOOSE x : x \in S
 
@@ -266,7 +270,6 @@ Timeout(r) ==
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
-\*
 
 \* True if l is valid log choice from ls
 LogChoiceRule(l,ls) == 
@@ -309,6 +312,10 @@ DiscardMessage(r) ==
            \/ Head(network[r][n]).type = "ViewChange" /\ primary[r]
         /\ network' = [network EXCEPT ![r][n] = Tail(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex, byzActions>>
+
+----
+\* Byzantine actions
+\* Byzantine actions can only be taken by byzantine replicas (BR) and if there are byzantine actions left to take
 
 \* A byzantine replica might vote for an entry without actually appending it to its log.
 \* This byzantine action currently has the same preconditions as AppendEntries
@@ -357,6 +364,8 @@ ByzPrimaryEquivocate(p) ==
             ![r][p][1] = ModifyAppendEntries(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
+\* Next state relation
+\* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
     \E r \in R: 
         \/ SendEntries(r)
