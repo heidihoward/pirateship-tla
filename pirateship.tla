@@ -443,6 +443,8 @@ OneLeaderPerTermInv ==
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
+RepeatedlyLeaderProp ==
+    []<>(TRUE \in Range(primary))
 
 AllMessagesConsumedProp ==
     <>(\A r, s \in R : network[r][s] = <<>>)
