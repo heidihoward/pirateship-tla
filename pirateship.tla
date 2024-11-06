@@ -443,6 +443,12 @@ OneLeaderPerTermInv ==
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
+RepeatedlyCrashCommitProgressProp ==
+    []<><<\A r \in HR : crashCommitIndex[r]' > crashCommitIndex[r]>>_crashCommitIndex
+
+RepeatedlyByzCommitProgressProp ==
+    []<><<\A r \in HR : byzCommitIndex[r]' > byzCommitIndex[r]>>_byzCommitIndex
+
 RepeatedlyLeaderProp ==
     []<>(TRUE \in Range(primary))
 
