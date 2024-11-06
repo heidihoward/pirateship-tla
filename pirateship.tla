@@ -5,7 +5,7 @@
 \* We also assume all txns include signatures
 
 EXTENDS 
-    Naturals, 
+    Integers, 
     Sequences, 
     FiniteSets, 
     FiniteSetsExt, 
@@ -58,7 +58,7 @@ BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 Views == 0..3
 
 \* Set of possible transactions
-Txs == 1..2
+Txs == {-1,1}
 
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
@@ -251,7 +251,6 @@ MaxQC(p) ==
 SendEntries(p) ==
     /\ primary[p]
     /\ \E tx \in Txs:
-        /\ \A i \in DOMAIN log[p]: log[p][i].tx # tx
         /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
@@ -351,11 +350,11 @@ ByzOmitEntries(r, p) ==
     /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
-ModifyAppendEntries(m) == [
+ModifyAppendEntries(m, tx) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
+        <<[Last(m.log) EXCEPT !.tx = tx]>>
 ]
 
 
@@ -368,8 +367,8 @@ ByzPrimaryEquivocate(p) ==
         /\ network[r][p] # <<>>
         /\ Head(network[r][p]).type = "AppendEntries"
         /\ Head(network[r][p]).log # <<>>
-        /\ network' = [network EXCEPT 
-            ![r][p][1] = ModifyAppendEntries(@)]
+        /\ \E tx \in Txs:
+            network' = [network EXCEPT ![r][p][1] = ModifyAppendEntries(@, tx)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
 \* Next state relation
@@ -387,7 +386,18 @@ Next ==
             \/ ReceiveNewLeader(r,s)
             \/ ByzOmitEntries(r,s)
 
-Spec == Init /\ [][Next]_vars
+Spec == 
+    /\ Init
+    /\ [][Next]_vars
+    \* Only Timeout if there is no primary.
+    /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
+    /\ \A r \in HR: WF_vars(BecomePrimary(r))
+    /\ \A r \in HR: WF_vars(DiscardMessage(r))
+    /\ \A r \in HR: WF_vars(SendEntries(r))
+    /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+    \* Omit any byzantine actions from the fairness condition.
 
 ----
 \* Properties
@@ -419,14 +429,30 @@ CommittedLogAppendOnlyProp ==
     [][\A i \in R :
         IsPrefix(Committed(i), Committed(i)')]_vars
 
+CrashCommitIndexMonotonic ==
+    [][\A r \in HR :
+            crashCommitIndex'[r] >= crashCommitIndex[r]]_vars
+
+ByzCommitIndexMonotonic ==
+    [][\A r \in HR :
+            byzCommitIndex'[r] >= byzCommitIndex[r]]_vars
+
 OneLeaderPerTermInv ==
     \A v \in Views, r \in HR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
+RepeatedlyCrashCommitProgressProp ==
+    []<><<\A r \in HR : crashCommitIndex[r]' > crashCommitIndex[r]>>_crashCommitIndex
+
+RepeatedlyByzCommitProgressProp ==
+    []<><<\A r \in HR : byzCommitIndex[r]' > byzCommitIndex[r]>>_byzCommitIndex
+
+RepeatedlyLeaderProp ==
+    []<>(TRUE \in Range(primary))
 
 AllMessagesConsumedProp ==
-    <>(\A r, s \in R : network[r][s] = <<>>)
+    []<>(\A r, s \in R : network[r][s] = <<>>)
 
 IndexBoundsInv ==
     \A r \in HR :
@@ -473,4 +499,66 @@ MonitorPostcondition ==
 
 PrintMonitors ==
     Monitors!TLCPrintMonitors
+
+----
+
+\* The combination of three conditions — MaxMessages, MaxDivergence, and MonotonicReduction — along
+\* with the fact that there are only a finite number of unique log entries (since transactions are
+\* treated as opaque), is sufficient to constrain the state space and ensure verification safety and
+\* liveness properties.
+
+MaxMessages ==
+    \* There are at most 2 messages in transit between any pair of replicas.
+    \A r, s \in R :
+        Len(network[r][s]) <= 2
+
+Abs(n) ==
+    IF n >= 0 THEN n ELSE -n
+
+MaxDivergence ==
+    \* The log of a replica does not diverge from its committed log by more than 3 entries.
+    \A i, j \in R :
+        /\ Len(log[i]) - crashCommitIndex[i] <= 3  \* TODO This should be byzCommitIndex instead of crashCommitIndex
+
+MonotonicReduction ==
+    \* Drop the prefix of each log (variable log and messages) up to and including the common prefix bound, and
+    \* decrement the crashCommitIndex and byzCommitIndex accordingly.  Moreover, reduce the qc of each remaining
+    \* log entry.  The underlying assumption is that committed log entries have no relevance on the correctness
+    \* of the algorithm.
+    \* 
+    \* Moreover, this view causes TLC to assign the same hash/fingerprint to states such as:
+    \*    
+    \* /\ log = << <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {}], [view |-> 0, tx |-> -1, qc |-> {1}]>>>>
+    \* /\ crashCommitIndex = <<1, 1, 1>>
+    \* /\ ...
+    \*    
+    \* /\ log = << <<[view |-> 0, tx |-> -1, qc |-> {0}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {0}]>>, 
+    \*             <<[view |-> 0, tx |-> -1, qc |-> {0}]>> >>
+    \* /\ crashCommitIndex = <<0, 0, 0>>
+    \* /\ ...
+    \* 
+    \* As a side effect, this causes TLC to add extra arcs to its liveness graph, enabling us to verify liveness
+    \* properties. While this technique may be unsound, it is out best shot at checking liveness properties;
+    \* without those "artifical" arcs, TLC will not be able to verify any liveness properties.
+    LET commonPrefixBound == CHOOSE n \in Range(crashCommitIndex) : \A r \in HR : crashCommitIndex[r] >= n  \* TODO This should be byzCommitIndex instead of crashCommitIndex
+    IN IF commonPrefixBound = 0 
+       THEN vars
+       ELSE LET \* Drop the prefix of the log up to idx, and reduce the qc of each remaining log entry.
+                rQC(xlog, idx) == [ i \in 1..Len(xlog)-idx |-> 
+                                        [ xlog[i+idx] EXCEPT !.qc = { Max2(0, qc - idx) : qc \in @ } ] ]
+                rLog == [ r \in R |-> rQC(log[r], commonPrefixBound) ]
+                rNetwork == [ r \in R |-> [ s \in R |-> 
+                                [ i \in DOMAIN network[r][s] |-> 
+                                    [ network[r][s][i] EXCEPT !.log = rQC(@, commonPrefixBound) ] ] ] ]
+                rMmatchIndex == [ r \in R |-> [ s \in R |-> Max2(0, matchIndex[r][s] - commonPrefixBound) ] ]
+                rCrashCommitIndex == [ r \in R |-> Max2(0, crashCommitIndex[r] - commonPrefixBound) ]
+                rByzCommitIndex == [ r \in R |-> Max2(0, byzCommitIndex[r] - commonPrefixBound) ]
+            IN 
+            << rLog, rMmatchIndex, rCrashCommitIndex, rByzCommitIndex, rNetwork,
+                \* unchanged values.
+                view, primary, byzActions>>
+
 ====
