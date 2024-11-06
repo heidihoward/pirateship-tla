@@ -58,7 +58,7 @@ BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 Views == 0..3
 
 \* Set of possible transactions
-Txs == 1..3
+Txs == 1..4
 
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
@@ -393,9 +393,6 @@ ByzPrimaryEquivocate(p) ==
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
-
-\* Allow a byz primaryvscode
-esl
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
