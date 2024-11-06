@@ -1,0 +1,23 @@
+name: TLA
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+
+  tlc-simulate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TLA+ Tools
+        run: |
+          git clone https://github.com/pmer/tla-bin.git
+          cd tla-bin
+          ./download_or_update_tla.sh --nightly
+          sudo ./install.sh
+      - name: Random simulation with TLC
+        run: JAVA_OPTS="-Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC" tlc -workers auto -simulate pirateship.tla
