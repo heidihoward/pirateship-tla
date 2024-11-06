@@ -256,7 +256,6 @@ SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
     /\ \E tx \in Txs:
-        /\ \A i \in DOMAIN log[p]: log[p][i].tx # tx
         \* primary will not sent a appendEntries to itself so update matchIndex here
         /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
