@@ -387,7 +387,18 @@ Next ==
             \/ ReceiveNewLeader(r,s)
             \/ ByzOmitEntries(r,s)
 
-Spec == Init /\ [][Next]_vars
+Spec == 
+    /\ Init
+    /\ [][Next]_vars
+    \* Only Timeout if there is no primary.
+    /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
+    /\ \A r \in HR: WF_vars(BecomePrimary(r))
+    /\ \A r \in HR: WF_vars(DiscardMessage(r))
+    /\ \A r \in HR: WF_vars(SendEntries(r))
+    /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+    \* Omit any byzantine actions from the fairness condition.
 
 ----
 \* Properties
@@ -419,14 +430,30 @@ CommittedLogAppendOnlyProp ==
     [][\A i \in R :
         IsPrefix(Committed(i), Committed(i)')]_vars
 
+CrashCommitIndexMonotonic ==
+    [][\A r \in HR :
+            crashCommitIndex'[r] >= crashCommitIndex[r]]_vars
+
+ByzCommitIndexMonotonic ==
+    [][\A r \in HR :
+            byzCommitIndex'[r] >= byzCommitIndex[r]]_vars
+
 OneLeaderPerTermInv ==
     \A v \in Views, r \in HR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
+RepeatedlyCrashCommitProgressProp ==
+    []<><<\A r \in HR : crashCommitIndex[r]' > crashCommitIndex[r]>>_crashCommitIndex
+
+RepeatedlyByzCommitProgressProp ==
+    []<><<\A r \in HR : byzCommitIndex[r]' > byzCommitIndex[r]>>_byzCommitIndex
+
+RepeatedlyLeaderProp ==
+    []<>(TRUE \in Range(primary))
 
 AllMessagesConsumedProp ==
-    <>(\A r, s \in R : network[r][s] = <<>>)
+    []<>(\A r, s \in R : network[r][s] = <<>>)
 
 IndexBoundsInv ==
     \A r \in HR :
