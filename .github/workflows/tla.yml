@@ -1,0 +1,32 @@
+name: TLA
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+
+  tlc-simulate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get (nightly) TLC
+        run: wget https://nightly.tlapl.us/dist/tla2tools.jar
+      - name: Get (nightly) CommunityModules
+        run: wget https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar
+      - name: Random simulation with TLC
+        run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -simulate pirateship.tla
+
+  tlc-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get (nightly) TLC
+        run: wget https://nightly.tlapl.us/dist/tla2tools.jar
+      - name: Get (nightly) CommunityModules
+        run: wget https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar
+      - name: Exhaustive Verification with TLC
+        run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -modelcheck pirateship.tla
