@@ -18,7 +18,7 @@ VARIABLE
     view,
     \* current log of each replica
     log,
-    \* flag indicating if each replica is primary
+    \* flag indicating if each replica is a primary
     primary,
     \* (primary only) the highest log entry on each replica replicated in this view
     matchIndex,
@@ -26,7 +26,7 @@ VARIABLE
     crashCommitIndex,
     \* byzantine commit index of each replica
     byzCommitIndex,
-    \* total number of byzantine actions taken so far
+    \* total number of byzantine actions taken so far by any byzantine replica
     byzActions
 
 vars == <<
@@ -58,14 +58,14 @@ BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 Views == 0..3
 
 \* Set of possible transactions
-Txs == 1..2
+Txs == 1..3
 
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
 MaxByzActions == 2
 
 ----
-\* Variable types
+\* Helpers & Variable types
 
 \* Number of replicas
 N == Cardinality(R)
@@ -74,8 +74,8 @@ N == Cardinality(R)
 HR == R \ BR
 
 \* Quorum certificates are simply the index of the log entry they confirm
-\* We will likely need to add view information to this
-\* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages, when modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
+\* Quorum certificates do not need views as they are always formed in the current view
+\* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
 QCs == Nat
 
 \* Each log entry contains just a view, a txn and optionally, a quorum certificate
@@ -105,7 +105,8 @@ ViewChanges == [
     type: {"ViewChange"},
     view: Views,
     log: Log]
-        
+
+\* Currently, we use seperate messages for NewLeader and AppendEntries, these could be merged
 NewLeaders == [
     type: {"NewLeader"},
     view: Views,
@@ -132,6 +133,7 @@ TypeOK ==
 ----
 \* Initial states
 
+\* We begin in view 0 with replica 1 as primary
 Init == 
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
@@ -210,7 +212,8 @@ ReceiveNewLeader(r, p) ==
             ])
         ]
     \* replica updates is commit indexes
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestQC(log'[r]))]
+    \* TODO: need to allow the crash commit to decrease in the case of a byz attack
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, matchIndex,byzActions>>
 
@@ -249,10 +252,13 @@ MaxQC(p) ==
 
 \* Primary p sends AppendEntries to all replicas
 SendEntries(p) ==
+    \* p must be the primary
     /\ primary[p]
     /\ \E tx \in Txs:
         /\ \A i \in DOMAIN log[p]: log[p][i].tx # tx
+        \* primary will not sent a appendEntries to itself so update matchIndex here
         /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
+        \* add the new entry to the log
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
@@ -267,31 +273,40 @@ SendEntries(p) ==
 
 \* Replica r times out
 Timeout(r) ==
+    \* artifact of the spec, check that the view limit is not exceeded
     /\ view[r] + 1 \in Views
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
+    \* send a view change message to the new primary (even if its itself)
     /\ network' = [network EXCEPT ![(view'[r] % N) + 1][r] = Append(@, [ 
         type |-> "ViewChange",
         view |-> view'[r],
         log |-> log[r]])
         ]
+    \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
+    \* reset matchIndexes, these are not used until the node is elected primary
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
 
-\* True if l is valid log choice from ls
-LogChoiceRule(l,ls) == 
-    /\ \/ \A l2 \in ls: l2 = <<>>
-       \/ /\ l # <<>>
-          /\ \A l2 \in ls:
-                l # l2 /\ l2 # <<>> 
-                =>  \/ Last(l).view > Last(l2).view
-                    \/  /\ Last(l).view = Last(l2).view 
-                        /\ Len(l) >= Len(l2)
+\* True if log l is valid log choice from the set of logs ls.
+\* Assumes that l \in ls
+LogChoiceRule(l,ls) ==
+    \* if all logs are empty, then any l must be empty and a valid choice  
+    \/ \A l2 \in ls: l2 = <<>>
+    \/ /\ l # <<>>
+        \* l is valid if all other logs in ls are empty or l is from a higher view or l is from the same view but at least as long
+       /\ \A l2 \in ls:
+            l # l2 /\ l2 # <<>> 
+            =>  \/ Last(l).view > Last(l2).view
+                \/  /\ Last(l).view = Last(l2).view 
+                    /\ Len(l) >= Len(l2)
 
 \* Replica r becomes primary
 BecomePrimary(r) ==
+    \* replica must be assigned the new view
     /\ r = (view[r] % N) + 1
+    \* a byz quorum must have voted for the replica
     /\ \E q \in BQ:
         /\ \A n \in q: 
             /\ network[r][n] # <<>>
@@ -300,6 +315,7 @@ BecomePrimary(r) ==
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
             LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
+        \* Need to update network to remove the view change message and sent a NewLeader message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
@@ -309,10 +325,16 @@ BecomePrimary(r) ==
                     view |-> view[r],
                     log |-> log'[r]])
                 ELSE network[r1][r2]]]
+    \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
-    /\ UNCHANGED <<view, matchIndex, crashCommitIndex, byzCommitIndex, byzActions>>
+    \* primary updates is commit indexes
+    \* TODO: need to allow the crash commit to decrease in the case of a byz attack
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
+    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
+    /\ UNCHANGED <<view, matchIndex, byzActions>>
 
-\* Replicas will discard messages from previous views
+\* Replicas will discard messages from previous views or extra view changes messages
+\* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
 DiscardMessage(r) ==
     /\ \E n \in R:
         /\ network[r][n] # <<>>
@@ -372,6 +394,9 @@ ByzPrimaryEquivocate(p) ==
             ![r][p][1] = ModifyAppendEntries(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
+\* Allow a byz primaryvscode
+esl
+
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
@@ -392,6 +417,9 @@ Spec == Init /\ [][Next]_vars
 ----
 \* Properties
 
+\* Correct replicas are either honest or byzantine when no byzantine actions have been taken yet
+CR == IF byzActions = 0 THEN R ELSE HR
+
 Committed(r) ==
     IF crashCommitIndex[r] = 0
     THEN << >>
@@ -399,6 +427,8 @@ Committed(r) ==
 
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
+\* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
+\* LogInv implies that the byzantine committed logs of replicas are prefixes too, as IndexBoundsInv ensures that the byzCommitIndex is always less than or equal to the crashCommitIndex.
 LogInv ==
     byzActions = 0 =>
         \A i, j \in R :
@@ -410,17 +440,26 @@ ByzCommitted(r) ==
     THEN << >>
     ELSE SubSeq(log[r], 1, byzCommitIndex[r])
 
+\* Variant of LogInv for the byzantine commit index and correct replicas only
+\* We make no assertions about the state of byzantine replicas
 ByzLogInv ==
-    \A i, j \in HR :
+    \A i, j \in CR :
         \/ IsPrefix(ByzCommitted(i),ByzCommitted(j)) 
         \/ IsPrefix(ByzCommitted(j),ByzCommitted(i))
 
+\* If no byzantine actions have been taken, then each replica only appends to its committed log
 CommittedLogAppendOnlyProp ==
-    [][\A i \in R :
+    [][byzActions = 0 => \A i \in R :
         IsPrefix(Committed(i), Committed(i)')]_vars
 
+\* Each correct replica only appends to its byzantine committed log
+ByzCommittedLogAppendOnlyProp ==
+    [][\A i \in CR :
+        IsPrefix(ByzCommitted(i), ByzCommitted(i)')]_vars
+
+\* At most one correct replica is primary in a view
 OneLeaderPerTermInv ==
-    \A v \in Views, r \in HR :
+    \A v \in Views, r \in CR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
@@ -429,17 +468,17 @@ AllMessagesConsumedProp ==
     <>(\A r, s \in R : network[r][s] = <<>>)
 
 IndexBoundsInv ==
-    \A r \in HR :
+    \A r \in CR :
         /\ crashCommitIndex[r] <= Len(log[r])
         /\ byzCommitIndex[r] <= crashCommitIndex[r]
 
 WellFormedLogInv ==
-    \A r \in HR :
+    \A r \in CR :
         \A i, j \in DOMAIN log[r] :
             i < j => log[r][i].view <= log[r][j].view
 
 WellFormedQCsInv ==
-    \A r \in HR : 
+    \A r \in CR : 
         \A i \in DOMAIN log[r] : 
             \A q \in log[r][i].qc :
                 \* qcs are always for previous entries
