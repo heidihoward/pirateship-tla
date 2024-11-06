@@ -55,7 +55,7 @@ CQ == {q \in SUBSET R: Cardinality(q) >= 3}
 BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 
 \* Limit on Views
-Views == 0..3
+Views == Nat
 
 \* Set of possible transactions
 Txs == 1..4
@@ -457,7 +457,7 @@ ByzCommittedLogAppendOnlyProp ==
 
 \* At most one correct replica is primary in a view
 OneLeaderPerTermInv ==
-    \A v \in Views, r \in CR :
+    \A v \in 0..Max(Range(view)), r \in CR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
