@@ -193,13 +193,21 @@ ReceiveEntries(r, p) ==
     /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
 
 \* Replica r handling NewLeader from primary p
+\* Note that unlike an AppendEntries message, a replica can updates its view upon receiving a NewLeader message
 ReceiveNewLeader(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
     \* and the next message is an NewLeader
     /\ Head(network[r][p]).type = "NewLeader"
-    \* the replica must be in the same view
-    /\ view[r] = Head(network[r][p]).view
+    \* the replica must be in the same view or lower
+    /\ view[r] \leq Head(network[r][p]).view
+    \* update the replica's local view
+    \* note that we do not dispatch a view change message as a primary has already been elected
+    /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
+    \* step down if replica was a primary
+    /\ primary' = [primary EXCEPT ![r] = FALSE]
+    \* reset matchIndexes, in case view was updated
+    /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
     \* we remove the NewLeader message and reply with a Vote message.
@@ -215,7 +223,7 @@ ReceiveNewLeader(r, p) ==
     \* TODO: need to allow the crash commit to decrease in the case of a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
-    /\ UNCHANGED <<primary, view, matchIndex,byzActions>>
+    /\ UNCHANGED <<byzActions>>
 
 \* Primary p receiving votes from replica r
 ReceiveVote(p, r) ==
