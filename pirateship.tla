@@ -5,7 +5,7 @@
 \* We also assume all txns include signatures
 
 EXTENDS 
-    Naturals, 
+    Integers, 
     Sequences, 
     FiniteSets, 
     FiniteSetsExt, 
@@ -106,7 +106,7 @@ ViewChanges == [
     view: Views,
     log: Log]
 
-\* Currently, we use seperate messages for NewLeader and AppendEntries, these could be merged
+\* Currently, we use separate messages for NewLeader and AppendEntries, these could be merged
 NewLeaders == [
     type: {"NewLeader"},
     view: Views,
@@ -147,13 +147,13 @@ Init ==
 ----
 \* Actions
 
-Extract(S) == CHOOSE x : x \in S
+\* Given a log l, return all indexes with direct quorum certificates
+AllQCs(l) == UNION {l[i].qc : i \in DOMAIN l}
 
-\* Given a log l, returns the index of the highest log entry with a quorum certificate
-HighestQC(l) ==
-    IF UNION {l[i].qc : i \in DOMAIN l} = {}
-    THEN 0
-    ELSE Max(UNION  {l[i].qc : i \in DOMAIN l})
+Max0(S) == IF S = {} THEN 0 ELSE Max(S)
+
+\* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
+HighestQC(l) == Max0(AllQCs(l))
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
 HighestQCOverQC(l) ==
@@ -240,10 +240,6 @@ ReceiveVote(p, r) ==
             Max({i \in DOMAIN log[p]: \E q \in CQ: \A n \in q: matchIndex'[p][n] >= i} \union {@})]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex,byzActions>>
 
-\* Like Max but returns a set
-MaxSet(S) == IF S = {} THEN {} ELSE {Max(S)}
-Max0(S) == IF S = {} THEN 0 ELSE Max(S)
-
 MaxQC(p) == 
     LET MaxQuorum == 
         Max0({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i})
@@ -288,6 +284,11 @@ Timeout(r) ==
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
+\* The view of the highest qc in log l, -1 if log contains no qcs
+HighestQCView(l) == 
+    IF HighestQC(l) = 0
+    THEN -1
+    ELSE l[HighestQC(l)].view
 
 \* True if log l is valid log choice from the set of logs ls.
 \* Assumes that l \in ls
@@ -298,8 +299,11 @@ LogChoiceRule(l,ls) ==
         \* l is valid if all other logs in ls are empty or l is from a higher view or l is from the same view but at least as long
        /\ \A l2 \in ls:
             l # l2 /\ l2 # <<>> 
-            =>  \/ Last(l).view > Last(l2).view
-                \/  /\ Last(l).view = Last(l2).view 
+            =>  \/ HighestQCView(l) > HighestQCView(l2)
+                \/  /\ HighestQCView(l) = HighestQCView(l2)
+                    /\ Last(l).view > Last(l2).view
+                \/  /\ HighestQCView(l) = HighestQCView(l2)
+                    /\ Last(l).view = Last(l2).view 
                     /\ Len(l) >= Len(l2)
 
 \* Replica r becomes primary
@@ -335,12 +339,11 @@ BecomePrimary(r) ==
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
-DiscardMessage(r) ==
-    /\ \E n \in R:
-        /\ network[r][n] # <<>>
-        /\ \/ Head(network[r][n]).view < view[r]
-           \/ Head(network[r][n]).type = "ViewChange" /\ primary[r]
-        /\ network' = [network EXCEPT ![r][n] = Tail(@)]
+DiscardMessage(r, s) ==
+    /\ network[r][s] # <<>>
+    /\ \/ Head(network[r][s]).view < view[r]
+       \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
+    /\ network' = [network EXCEPT ![r][s] = Tail(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex, byzActions>>
 
 ----
@@ -400,7 +403,6 @@ Next ==
     \E r \in R: 
         \/ SendEntries(r)
         \/ Timeout(r)
-        \/ DiscardMessage(r)
         \/ BecomePrimary(r)
         \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: 
@@ -408,12 +410,13 @@ Next ==
             \/ ReceiveVote(r,s)
             \/ ReceiveNewLeader(r,s)
             \/ ByzOmitEntries(r,s)
+            \/ DiscardMessage(r,s)
 
 Fairness ==
     \* Only Timeout if there is no primary.
     /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
     /\ \A r \in HR: WF_vars(BecomePrimary(r))
-    /\ \A r \in HR: WF_vars(DiscardMessage(r))
+    /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
