@@ -177,7 +177,7 @@ ReceiveEntries(r, p) ==
     /\ log[r] = Front(Head(network[r][p]).log)
     \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
-    \* we remove the message and reply with a vote
+    \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
@@ -202,7 +202,7 @@ ReceiveNewLeader(r, p) ==
     /\ view[r] = Head(network[r][p]).view
     \* the replica replaces its log with the received log
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
-    \* we message and reply with a vote
+    \* we remove the NewLeader message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
@@ -233,6 +233,7 @@ ReceiveVote(p, r) ==
             ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
             THEN Len(Head(network[p][r]).log) 
             ELSE @]
+    \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
@@ -361,7 +362,7 @@ ByzOmitEntries(r, p) ==
     /\ view[r] = Head(network[r][p]).view
     \* the replica only appends one entry to its log
     /\ log[r] = Front(Head(network[r][p]).log)
-    \* we message and reply with a vote
+    \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
