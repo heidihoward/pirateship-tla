@@ -11,6 +11,24 @@ EXTENDS
     FiniteSetsExt, 
     SequencesExt
 
+----
+
+\* Set of replicas
+CONSTANT R
+ASSUME R # {}
+
+\* Byzantine replicas
+CONSTANT BR
+ASSUME BR \subseteq R
+
+\* Set of possible transactions
+CONSTANT Txs
+ASSUME Txs # {}
+
+\* Max number of byzantine actions
+\* This parameter is completely artificial and is used to limit the state space
+CONSTANT MaxByzActions
+
 VARIABLE
     \* messages in transit between any pair of replicas
     network,
@@ -40,13 +58,7 @@ vars == <<
     byzActions>>
 
 ----
-\* Model parameters
-
-\* Set of replicas
-R == 1..4
-
-\* Byzantine replicas
-BR == {4}
+\* Helpers & Variable types
 
 \* Set of quourms for crash fault tolerance
 CQ == {q \in SUBSET R: Cardinality(q) >= 3}
@@ -54,24 +66,13 @@ CQ == {q \in SUBSET R: Cardinality(q) >= 3}
 \* Set of quourms for byzantine fault tolerance
 BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 
-\* Limit on Views
-Views == Nat
-
-\* Set of possible transactions
-Txs == 1..4
-
-\* Max number of byzantine actions
-\* This parameter is completely artificial and is used to limit the state space
-MaxByzActions == 2
-
-----
-\* Helpers & Variable types
-
 \* Number of replicas
 N == Cardinality(R)
 
 \* Honest replicas
 HR == R \ BR
+
+Views ==  Nat
 
 \* Quorum certificates are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
@@ -277,8 +278,6 @@ SendEntries(p) ==
 
 \* Replica r times out
 Timeout(r) ==
-    \* artifact of the spec, check that the view limit is not exceeded
-    /\ view[r] + 1 \in Views
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
     /\ network' = [network EXCEPT ![(view'[r] % N) + 1][r] = Append(@, [ 

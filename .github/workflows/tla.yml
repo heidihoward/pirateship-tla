@@ -29,4 +29,4 @@ jobs:
       - name: Get (nightly) CommunityModules
         run: wget https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar
       - name: Exhaustive Verification with TLC
-        run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -modelcheck pirateship.tla
+        run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -modelcheck MCpirateship.tla
