@@ -280,7 +280,7 @@ Timeout(r) ==
     \* artifact of the spec, check that the view limit is not exceeded
     /\ view[r] + 1 \in Views
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
-    \* send a view change message to the new primary (even if its itself)
+    \* send a view change message to the new primary (even if it's itself)
     /\ network' = [network EXCEPT ![(view'[r] % N) + 1][r] = Append(@, [ 
         type |-> "ViewChange",
         view |-> view'[r],
