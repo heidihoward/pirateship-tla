@@ -239,10 +239,10 @@ ReceiveVote(p, r) ==
     \* and the next message is a vote from the correct view
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
-    /\ view[r] = Head(network[p][r]).view
+    /\ view[p] = Head(network[p][r]).view
     /\ \* match index only updated if the log entry is in the current view, this means that the match index only updated in response to AppendEntries
         IF \/ Head(network[p][r]).log = <<>> 
-           \/ Last(Head(network[p][r]).log).view # view[r]
+           \/ Last(Head(network[p][r]).log).view # view[p]
         THEN UNCHANGED matchIndex
         ELSE matchIndex' = [matchIndex EXCEPT 
             ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
