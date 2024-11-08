@@ -491,9 +491,6 @@ OneLeaderPerTermInv ==
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
 
-AllMessagesConsumedProp ==
-    <>(\A r, s \in R : network[r][s] = <<>>)
-
 IndexBoundsInv ==
     \A r \in CR :
         /\ crashCommitIndex[r] <= Len(log[r])
