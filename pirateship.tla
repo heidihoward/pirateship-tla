@@ -74,6 +74,12 @@ HR == R \ BR
 
 Views ==  Nat
 
+ReplicaSeq ==
+    CHOOSE s \in [ 1..N -> R ]: Range(s) = R
+
+Primary(v) ==
+    ReplicaSeq[(v % N) + 1]
+
 \* Quorum certificates are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
@@ -139,7 +145,7 @@ Init ==
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
-    /\ primary = [r \in R |-> r = 1]
+    /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ matchIndex = [r \in R |-> [s \in R |-> 0]]
     /\ crashCommitIndex = [r \in R |-> 0]
     /\ byzCommitIndex = [r \in R |-> 0]
@@ -280,7 +286,7 @@ SendEntries(p) ==
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
-    /\ network' = [network EXCEPT ![(view'[r] % N) + 1][r] = Append(@, [ 
+    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, [ 
         type |-> "ViewChange",
         view |-> view'[r],
         log |-> log[r]])
@@ -316,7 +322,7 @@ LogChoiceRule(l,ls) ==
 \* Replica r becomes primary
 BecomePrimary(r) ==
     \* replica must be assigned the new view
-    /\ r = (view[r] % N) + 1
+    /\ r = Primary(view[r])
     \* a byz quorum must have voted for the replica
     /\ \E q \in BQ:
         /\ \A n \in q: 
