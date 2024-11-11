@@ -1,5 +1,5 @@
 ----- MODULE SIMpirateship -----
-EXTENDS pirateship, TLC
+EXTENDS TLCpirateship, TLC
 
 PS == INSTANCE pirateship
 
