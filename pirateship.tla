@@ -193,18 +193,18 @@ ReceiveEntries(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica updates is commit indexes
+    \* replica updates its commit indexes
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
 
 \* Replica r handling NewLeader from primary p
-\* Note that unlike an AppendEntries message, a replica can updates its view upon receiving a NewLeader message
+\* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewLeader message
 ReceiveNewLeader(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
-    \* and the next message is an NewLeader
+    \* and the next message is a NewLeader
     /\ Head(network[r][p]).type = "NewLeader"
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
@@ -226,7 +226,7 @@ ReceiveNewLeader(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica updates is commit indexes
+    \* replica updates its commit indexes
     \* TODO: need to allow the crash commit to decrease in the case of a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
@@ -267,7 +267,7 @@ SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
     /\ \E tx \in Txs:
-        \* primary will not sent a appendEntries to itself so update matchIndex here
+        \* primary will not send an appendEntries to itself so update matchIndex here
         /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
         /\ log' = [log EXCEPT ![p] = Append(@, [
@@ -332,7 +332,7 @@ BecomePrimary(r) ==
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
             LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
-        \* Need to update network to remove the view change message and sent a NewLeader message to all replicas
+        \* Need to update network to remove the view change message and send a NewLeader message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
@@ -344,7 +344,7 @@ BecomePrimary(r) ==
                 ELSE network[r1][r2]]]
     \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
-    \* primary updates is commit indexes
+    \* primary updates its commit indexes
     \* TODO: need to allow the crash commit to decrease in the case of a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
