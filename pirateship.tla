@@ -96,16 +96,16 @@ NewLeaders == [
     log: Log]
 
 \* @type: $message => {type: Str, view: Int, log: $log};
-AsAE(msg) == VariantGetUnsafe("A", msg)
+AsAE(msg) == VariantGetUnsafe("AppendEntries", msg)
 
 \* @type: $message => {type: Str, view: Int, log: $log};
-AsV(msg) == VariantGetUnsafe("V", msg)
+AsV(msg) == VariantGetUnsafe("Vote", msg)
 
 \* @type: $message => {type: Str, view: Int, log: $log};
-AsVC(msg) == VariantGetUnsafe("VC", msg)
+AsVC(msg) == VariantGetUnsafe("ViewChange", msg)
 
 \* @type: $message => {type: Str, view: Int, log: $log};
-AsNL(msg) == VariantGetUnsafe("NL", msg)
+AsNL(msg) == VariantGetUnsafe("NewLeader", msg)
 
 \* All possible messages
 Messages == 
@@ -117,7 +117,11 @@ Messages ==
 \* @typeAlias: logEntry = { view: Int, tx: Int, qc: Set(Int) };
 \* @typeAlias: log = Seq($logEntry);
 \*
-\* @typeAlias: message = A({type: Str, view: Int, log: $log}) | V({type: Str, view: Int, log: $log}) | VC({type: Str, view: Int, log: $log}) | NL({type: Str, view: Int, log: $log});
+\* @typeAlias: message = 
+\*      AppendEntries({type: Str, view: Int, log: $log})
+\*    | Vote({type: Str, view: Int, log: $log})
+\*    | ViewChange({type: Str, view: Int, log: $log})
+\*    | NewLeader({type: Str, view: Int, log: $log});
 \* @typeAlias: msg = Seq($message);
 typedefs == TRUE
 
@@ -218,7 +222,7 @@ ReceiveEntries(r, p) ==
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,Variant("V",[
+        ![p][r] = Append(@,Variant("Vote",[
             type |-> "Vote",
             view |-> view[r],
             log |-> log'[r]
@@ -251,7 +255,7 @@ ReceiveNewLeader(r, p) ==
     \* we remove the NewLeader message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,Variant("V",[
+        ![p][r] = Append(@,Variant("Vote",[
             type |-> "Vote",
             view |-> view[r],
             log |-> log'[r]
@@ -307,7 +311,7 @@ SendEntries(p) ==
             qc |-> MaxQC(p)])]
         /\ network' = 
             [r \in R |-> [s \in R |->
-                IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], Variant("A", [ 
+                IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], Variant("AppendEntries", [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
                     log |-> log'[p]]))]]
@@ -317,7 +321,7 @@ SendEntries(p) ==
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
-    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, Variant("A", [ 
+    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, Variant("AppendEntries", [ 
         type |-> "ViewChange",
         view |-> view'[r],
         log |-> log[r]]))
@@ -368,7 +372,7 @@ BecomePrimary(r) ==
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
             ELSE IF r1 # r /\ r2 = r 
-                THEN Append(network[r1][r2], Variant("NL",[ 
+                THEN Append(network[r1][r2], Variant("NewLeader",[ 
                     type |-> "NewLeader",
                     view |-> view[r],
                     log |-> log'[r]]))
@@ -411,7 +415,7 @@ ByzOmitEntries(r, p) ==
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,Variant("VC",[
+        ![p][r] = Append(@,Variant("Vote",[
             type |-> "Vote",
             view |-> view[r],
             log |-> AsAE(Head(network[r][p])).log
@@ -419,26 +423,25 @@ ByzOmitEntries(r, p) ==
         ]
     /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
 
-\* Given an append entries message, returns the same message with the txn changed to 1
-ModifyAppendEntries(m) == Variant("AE", [
-    type |-> "AppendEntries",
-    view |-> AsAE(m).view,
-    log |-> SubSeq(AsAE(m).log,1,Len(AsAE(m).log)-1) \o 
-        <<[Last(AsAE(m).log) EXCEPT !.tx = 1]>>
-])
-
 \* We allow a byzantine primary to equivocate by changing the txn in an AppendEntries message
-\* ByzPrimaryEquivocate(p) ==
-\*     /\ p \in BR
-\*     /\ byzActions < MaxByzActions
-\*     /\ byzActions' = byzActions + 1
-\*     /\ \E r \in R:
-\*         /\ network[r][p] # <<>>
-\*         /\ AsAE(Head(network[r][p])).type = "AppendEntries"
-\*         /\ AsAE(Head(network[r][p])).log # <<>>
-\*         /\ network' = [network EXCEPT 
-\*             ![r][p][1] = ModifyAppendEntries(@)]
-\*     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
+ByzPrimaryEquivocate(p,r) ==
+    /\ p \in BR
+    /\ byzActions < MaxByzActions
+    /\ byzActions' = byzActions + 1
+    /\ network[r][p] # <<>>
+    /\ LET m == AsAE(Head(network[r][p])) IN
+       /\ m.type = "AppendEntries"
+       /\ m.log # <<>>
+       /\ \E t \in Txs:
+               network' = [ network EXCEPT
+                ![r][p][1] = 
+                   Variant("AppendEntries", [ 
+                       type |-> "AppendEntries",
+                       view |-> m.view,
+                       log |-> SubSeq(m.log,1,Len(m.log)-1) \o <<[Last(m.log) EXCEPT !.tx = 1]>>
+                       ])
+                   ]
+    /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
@@ -447,12 +450,12 @@ Next ==
         \/ SendEntries(r)
         \/ Timeout(r)
         \/ BecomePrimary(r)
-        \* \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
             \/ ReceiveNewLeader(r,s)
             \/ ByzOmitEntries(r,s)
+            \/ ByzPrimaryEquivocate(r,s)
             \/ DiscardMessage(r,s)
 
 Fairness ==
