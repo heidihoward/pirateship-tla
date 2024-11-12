@@ -30,3 +30,27 @@ jobs:
         run: wget https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar
       - name: Exhaustive Verification with TLC
         run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -modelcheck MCpirateship.tla
+
+  apalache-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'microsoft'
+          java-version: '17'
+      - name: Setup
+        run: |
+          wget https://github.com/informalsystems/apalache/releases/latest/download/apalache.tgz
+          tar zxvf apalache.tgz
+      - name: Type- and (ordinary) invariant checking with Apalache
+        run: |
+          ## -length=4 to finish in reasonable time.
+          ./apalache/bin/apalache-mc check --length=3 --inv=WellFormedQCsInv,WellFormedLogInv,IndexBoundsInv,OneLeaderPerTermInv,ByzLogInv,LogInv --temporal=ByzCommittedLogAppendOnlyProp,CommittedLogAppendOnlyProp  APApirateship.tla
+      - name: Upload Apalache's counterexample (if any)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+            name: apalache-check
+            path: |
+              _apalache-out/
