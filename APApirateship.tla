@@ -4,13 +4,13 @@ R ==
     {"0_OF_REPLICA", "1_OF_REPLICA", "2_OF_REPLICA"}
 
 BR ==
-    {}
+    {"3_OF_REPLICA"}
 
 Txs ==
     {0,1}
 
 MaxByzActions ==
-    0
+    1
 
 Primary(v) ==
     "0_OF_REPLICA" \*TODO
