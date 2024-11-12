@@ -1,4 +1,5 @@
 ---------- MODULE APApirateship ----------
+EXTENDS Integers
 
 R ==
     {"0_OF_REPLICA", "1_OF_REPLICA", "2_OF_REPLICA"}
@@ -13,7 +14,10 @@ MaxByzActions ==
     1
 
 Primary(v) ==
-    "0_OF_REPLICA" \*TODO
+    IF v % 4 = 0 THEN "0_OF_REPLICA" ELSE
+    IF v % 4 = 1 THEN "1_OF_REPLICA" ELSE
+    IF v % 4 = 2 THEN "2_OF_REPLICA" ELSE
+                      "3_OF_REPLICA"
 
 VARIABLE
     \* messages in transit between any pair of replicas
