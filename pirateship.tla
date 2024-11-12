@@ -7,7 +7,8 @@
 EXTENDS 
     Integers, 
     Sequences, 
-    FiniteSets
+    FiniteSets,
+    Variants
 
 ----
 
@@ -50,7 +51,7 @@ Views ==
     Nat
 
 CONSTANT 
-    \* @type: REPLICA;
+    \* @type: Int => REPLICA;
     Primary(_)
 
 \* Quorum certificates are simply the index of the log entry they confirm
@@ -71,20 +72,40 @@ Log == Seq(LogEntry)
 
 AppendEntries == [
     type: {"AppendEntries"},
-    view: Views]
+    view: Views,
+    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
+    log: Log]
 
 Votes == [
     type: {"Vote"},
-    view: Views]
+    view: Views,
+    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
+    log: Log]
 
 ViewChanges == [
     type: {"ViewChange"},
-    view: Views]
+    view: Views,
+    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
+    log: Log]
 
 \* Currently, we use separate messages for NewLeader and AppendEntries, these could be merged
 NewLeaders == [
     type: {"NewLeader"},
-    view: Views]
+    view: Views,
+    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
+    log: Log]
+
+\* @type: $message => {type: Str, view: Int, log: $log};
+AsAE(msg) == VariantGetUnsafe("A", msg)
+
+\* @type: $message => {type: Str, view: Int, log: $log};
+AsV(msg) == VariantGetUnsafe("V", msg)
+
+\* @type: $message => {type: Str, view: Int, log: $log};
+AsVC(msg) == VariantGetUnsafe("VC", msg)
+
+\* @type: $message => {type: Str, view: Int, log: $log};
+AsNL(msg) == VariantGetUnsafe("NL", msg)
 
 \* All possible messages
 Messages == 
@@ -95,12 +116,15 @@ Messages ==
 
 \* @typeAlias: logEntry = { view: Int, tx: Int, qc: Set(Int) };
 \* @typeAlias: log = Seq($logEntry);
+\*
+\* @typeAlias: message = A({type: Str, view: Int, log: $log}) | V({type: Str, view: Int, log: $log}) | VC({type: Str, view: Int, log: $log}) | NL({type: Str, view: Int, log: $log});
+\* @typeAlias: msg = Seq($message);
 typedefs == TRUE
 
 VARIABLE
     \* messages in transit between any pair of replicas
-    \* type: REPLICA -> Int; \*TODO
-    \* network,
+    \* @type: REPLICA -> (REPLICA -> $msg);
+    network,
     \* current view of each replica
     \* @type: REPLICA -> Int;
     view,
@@ -124,7 +148,7 @@ VARIABLE
     byzActions
 
 vars == <<
-    \* network,
+    network,
     view,  
     log, 
     primary, 
@@ -137,6 +161,7 @@ vars == <<
 TypeOK == 
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
+    \* See https://github.com/konnov/apalache-examples/blob/af6b380921b28362ac746507ab4c24741299a2f9/ben-or83/Ben_or83_inductive.tla#L64-L71
     \* /\ \A r, s \in R:
     \*     \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
@@ -151,7 +176,7 @@ TypeOK ==
 \* We begin in view 0 with replica 1 as primary
 Init == 
     /\ view = [r \in R |-> 0]
-    \* /\ network = [r \in R |-> [s \in R |-> <<>>]]
+    /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
     /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ matchIndex = [r \in R |-> [s \in R |-> 0]]
@@ -159,16 +184,8 @@ Init ==
     /\ byzCommitIndex = [r \in R |-> 0]
     /\ byzActions = 0
 
-Next ==
-    TRUE
-
-====
-
-----
-\* Actions
-
 \* Given a log l, return all indexes with direct quorum certificates
-\* @type: Seq($logEntry) => Set(Int);
+\* @type: $log => Set(Int);
 AllQCs(l) == UNION {l[i].qc : i \in DOMAIN l}
 
 Max0(S) == IF S = {} THEN 0 ELSE Max(S)
@@ -189,23 +206,23 @@ ReceiveEntries(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
     \* and the next message is an AppendEntries
-    /\ Head(network[r][p]).type = "AppendEntries"
+    /\ AsAE(Head(network[r][p])).type = "AppendEntries"
     \* the replica must be in the same view
-    /\ view[r] = Head(network[r][p]).view
+    /\ view[r] = AsAE(Head(network[r][p])).view
     \* and must be replicating an entry from this view
-    /\ Last(Head(network[r][p]).log).view = view[r]
+    /\ Last(AsAE(Head(network[r][p])).log).view = view[r]
     \* the replica only appends (one entry at a time) to its log
-    /\ log[r] = Front(Head(network[r][p]).log)
+    /\ log[r] = Front(AsAE(Head(network[r][p])).log)
     \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
-    /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
+    /\ log' = [log EXCEPT ![r] =  AsAE(Head(network[r][p])).log]
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,[
+        ![p][r] = Append(@,Variant("V",[
             type |-> "Vote",
             view |-> view[r],
             log |-> log'[r]
-            ])
+            ]))
         ]
     \* replica updates its commit indexes
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestQC(log'[r]))]
@@ -219,26 +236,26 @@ ReceiveNewLeader(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
     \* and the next message is a NewLeader
-    /\ Head(network[r][p]).type = "NewLeader"
+    /\ AsNL(Head(network[r][p])).type = "NewLeader"
     \* the replica must be in the same view or lower
-    /\ view[r] \leq Head(network[r][p]).view
+    /\ view[r] \leq AsNL(Head(network[r][p])).view
     \* update the replica's local view
     \* note that we do not dispatch a view change message as a primary has already been elected
-    /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
+    /\ view' = [view EXCEPT ![r] = AsNL(Head(network[r][p])).view]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
     \* reset matchIndexes, in case view was updated
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
-    /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
+    /\ log' = [log EXCEPT ![r] =  AsNL(Head(network[r][p])).log]
     \* we remove the NewLeader message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,[
+        ![p][r] = Append(@,Variant("V",[
             type |-> "Vote",
             view |-> view[r],
             log |-> log'[r]
-            ])
+            ]))
         ]
     \* replica updates its commit indexes
     \* TODO: need to allow the crash commit to decrease in the case of a byz attack
@@ -252,15 +269,15 @@ ReceiveVote(p, r) ==
     /\ primary[p]
     \* and the next message is a vote from the correct view
     /\ network[p][r] # <<>>
-    /\ Head(network[p][r]).type = "Vote"
-    /\ view[p] = Head(network[p][r]).view
+    /\ AsV(Head(network[p][r])).type = "Vote"
+    /\ view[p] = AsV(Head(network[p][r])).view
     /\ \* match index only updated if the log entry is in the current view, this means that the match index only updated in response to AppendEntries
-        IF \/ Head(network[p][r]).log = <<>> 
-           \/ Last(Head(network[p][r]).log).view # view[p]
+        IF \/ AsV(Head(network[p][r])).log = <<>> 
+           \/ Last(AsV(Head(network[p][r])).log).view # view[p]
         THEN UNCHANGED matchIndex
         ELSE matchIndex' = [matchIndex EXCEPT 
-            ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
-            THEN Len(Head(network[p][r]).log) 
+            ![p][r] = IF @ \leq Len(AsV(Head(network[p][r])).log) 
+            THEN Len(AsV(Head(network[p][r])).log) 
             ELSE @]
     \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
@@ -290,20 +307,20 @@ SendEntries(p) ==
             qc |-> MaxQC(p)])]
         /\ network' = 
             [r \in R |-> [s \in R |->
-                IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
+                IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], Variant("A", [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
-                    log |-> log'[p]])]]
+                    log |-> log'[p]]))]]
         /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* Replica r times out
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
-    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, [ 
+    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, Variant("A", [ 
         type |-> "ViewChange",
         view |-> view'[r],
-        log |-> log[r]])
+        log |-> log[r]]))
         ]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
@@ -341,20 +358,20 @@ BecomePrimary(r) ==
     /\ \E q \in {q \in SUBSET R: Cardinality(q) >= 3}:
         /\ \A n \in q: 
             /\ network[r][n] # <<>>
-            /\ Head(network[r][n]).type = "ViewChange"
-            /\ view[r] = Head(network[r][n]).view
-        /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
-            LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
+            /\ AsVC(Head(network[r][n])).type = "ViewChange"
+            /\ view[r] = AsVC(Head(network[r][n])).view
+        /\ \E l1 \in {AsVC(Head(network[r][n])).log : n \in q}:
+            LogChoiceRule(l1, {AsVC(Head(network[r][n])).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
         \* Need to update network to remove the view change message and send a NewLeader message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
             ELSE IF r1 # r /\ r2 = r 
-                THEN Append(network[r1][r2], [ 
+                THEN Append(network[r1][r2], Variant("NL",[ 
                     type |-> "NewLeader",
                     view |-> view[r],
-                    log |-> log'[r]])
+                    log |-> log'[r]]))
                 ELSE network[r1][r2]]]
     \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
@@ -368,8 +385,8 @@ BecomePrimary(r) ==
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
 DiscardMessage(r, s) ==
     /\ network[r][s] # <<>>
-    /\ \/ Head(network[r][s]).view < view[r]
-       \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
+    /\ \/ AsVC(Head(network[r][s])).view < view[r]
+       \/ AsVC(Head(network[r][s])).type = "ViewChange" /\ primary[r]
     /\ network' = [network EXCEPT ![r][s] = Tail(@)]
     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex, byzActions>>
 
@@ -386,43 +403,42 @@ ByzOmitEntries(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
     \* and the next message is an AppendEntries
-    /\ Head(network[r][p]).type = "AppendEntries"
+    /\ AsAE(Head(network[r][p])).type = "AppendEntries"
     \* the replica must be in the same view
-    /\ view[r] = Head(network[r][p]).view
+    /\ view[r] = AsAE(Head(network[r][p])).view
     \* the replica only appends one entry to its log
-    /\ log[r] = Front(Head(network[r][p]).log)
+    /\ log[r] = Front(AsAE(Head(network[r][p])).log)
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
-        ![p][r] = Append(@,[
+        ![p][r] = Append(@,Variant("VC",[
             type |-> "Vote",
             view |-> view[r],
-            log |-> Head(network[r][p]).log
-            ])
+            log |-> AsAE(Head(network[r][p])).log
+            ]))
         ]
     /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
-ModifyAppendEntries(m) == [
+ModifyAppendEntries(m) == Variant("AE", [
     type |-> "AppendEntries",
-    view |-> m.view,
-    log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
-]
-
+    view |-> AsAE(m).view,
+    log |-> SubSeq(AsAE(m).log,1,Len(AsAE(m).log)-1) \o 
+        <<[Last(AsAE(m).log) EXCEPT !.tx = 1]>>
+])
 
 \* We allow a byzantine primary to equivocate by changing the txn in an AppendEntries message
-ByzPrimaryEquivocate(p) ==
-    /\ p \in BR
-    /\ byzActions < MaxByzActions
-    /\ byzActions' = byzActions + 1
-    /\ \E r \in R:
-        /\ network[r][p] # <<>>
-        /\ Head(network[r][p]).type = "AppendEntries"
-        /\ Head(network[r][p]).log # <<>>
-        /\ network' = [network EXCEPT 
-            ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
+\* ByzPrimaryEquivocate(p) ==
+\*     /\ p \in BR
+\*     /\ byzActions < MaxByzActions
+\*     /\ byzActions' = byzActions + 1
+\*     /\ \E r \in R:
+\*         /\ network[r][p] # <<>>
+\*         /\ AsAE(Head(network[r][p])).type = "AppendEntries"
+\*         /\ AsAE(Head(network[r][p])).log # <<>>
+\*         /\ network' = [network EXCEPT 
+\*             ![r][p][1] = ModifyAppendEntries(@)]
+\*     /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
@@ -431,7 +447,7 @@ Next ==
         \/ SendEntries(r)
         \/ Timeout(r)
         \/ BecomePrimary(r)
-        \/ ByzPrimaryEquivocate(r)
+        \* \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
