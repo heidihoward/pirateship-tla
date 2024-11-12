@@ -7,117 +7,84 @@
 EXTENDS 
     Integers, 
     Sequences, 
-    FiniteSets, 
-    FiniteSetsExt, 
-    SequencesExt
+    FiniteSets
 
 ----
 
+\* Range(f) == { f[x] : x \in DOMAIN f }
+Max(S) == CHOOSE x \in S : \A y \in S : x >= y
+Front(s) == SubSeq(s, 1, Len(s)-1)
+Last(s) == s[Len(s)]
+IsPrefix(s, t) == Len(s) <= Len(t) /\ SubSeq(s, 1, Len(s)) = SubSeq(t, 1, Len(s))
+
 \* Set of replicas
-CONSTANT R
-ASSUME R # {}
+CONSTANT
+    \* @type: Set(REPLICA);
+    R
+\* ASSUME R # {}
 
 \* Byzantine replicas
-CONSTANT BR
+CONSTANT 
+    \* @type: Set(REPLICA);
+    BR
 ASSUME BR \subseteq R
 
 \* Set of possible transactions
-CONSTANT Txs
-ASSUME Txs # {}
+CONSTANT 
+    \* @type: Set(Int);
+    Txs
+\* ASSUME Txs # {}
 
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
-CONSTANT MaxByzActions
-
-VARIABLE
-    \* messages in transit between any pair of replicas
-    network,
-    \* current view of each replica
-    view,
-    \* current log of each replica
-    log,
-    \* flag indicating if each replica is a primary
-    primary,
-    \* (primary only) the highest log entry on each replica replicated in this view
-    matchIndex,
-    \* crash commit index of each replica
-    crashCommitIndex,
-    \* byzantine commit index of each replica
-    byzCommitIndex,
-    \* total number of byzantine actions taken so far by any byzantine replica
-    byzActions
-
-vars == <<
-    network,
-    view,  
-    log, 
-    primary, 
-    matchIndex,
-    crashCommitIndex,
-    byzCommitIndex,
-    byzActions>>
-
+CONSTANT
+    \* @type: Int;
+    MaxByzActions
 ----
 \* Helpers & Variable types
-
-\* Set of quourms for crash fault tolerance
-CQ == {q \in SUBSET R: Cardinality(q) >= 3}
-
-\* Set of quourms for byzantine fault tolerance
-BQ == {q \in SUBSET R: Cardinality(q) >= 3}
-
-\* Number of replicas
-N == Cardinality(R)
 
 \* Honest replicas
 HR == R \ BR
 
-Views ==  Nat
+Views ==
+    Nat
 
-ReplicaSeq ==
-    CHOOSE s \in [ 1..N -> R ]: Range(s) = R
-
-Primary(v) ==
-    ReplicaSeq[(v % N) + 1]
+CONSTANT 
+    \* @type: REPLICA;
+    Primary(_)
 
 \* Quorum certificates are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
-QCs == Nat
+QCs ==
+    Nat
 
 \* Each log entry contains just a view, a txn and optionally, a quorum certificate
 LogEntry == [
     view: Views, 
     tx: Txs,
-    \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     qc: SUBSET QCs]
-
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
 Log == Seq(LogEntry)
 
+
 AppendEntries == [
     type: {"AppendEntries"},
-    view: Views,
-    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
-    log: Log]
+    view: Views]
 
 Votes == [
     type: {"Vote"},
-    view: Views,
-    \* As with AppendEntries, we send the entire log for the sake of the spec
-    log: Log]
+    view: Views]
 
 ViewChanges == [
     type: {"ViewChange"},
-    view: Views,
-    log: Log]
+    view: Views]
 
 \* Currently, we use separate messages for NewLeader and AppendEntries, these could be merged
 NewLeaders == [
     type: {"NewLeader"},
-    view: Views,
-    log: Log]
+    view: Views]
 
 \* All possible messages
 Messages == 
@@ -126,11 +93,52 @@ Messages ==
     ViewChanges \union 
     NewLeaders
 
+\* @typeAlias: logEntry = { view: Int, tx: Int, qc: Set(Int) };
+\* @typeAlias: log = Seq($logEntry);
+typedefs == TRUE
+
+VARIABLE
+    \* messages in transit between any pair of replicas
+    \* type: REPLICA -> Int; \*TODO
+    \* network,
+    \* current view of each replica
+    \* @type: REPLICA -> Int;
+    view,
+    \* current log of each replica
+    \* @type: REPLICA -> $log;
+    log,
+    \* flag indicating if each replica is a primary
+    \* @type: REPLICA -> Bool;
+    primary,
+    \* (primary only) the highest log entry on each replica replicated in this view
+    \* @type: REPLICA -> (REPLICA -> Int);
+    matchIndex,
+    \* crash commit index of each replica
+    \* @type: REPLICA -> Int;
+    crashCommitIndex,
+    \* byzantine commit index of each replica
+    \* @type: REPLICA -> Int;
+    byzCommitIndex,
+    \* total number of byzantine actions taken so far by any byzantine replica
+    \* @type: Int;
+    byzActions
+
+vars == <<
+    \* network,
+    view,  
+    log, 
+    primary, 
+    matchIndex,
+    crashCommitIndex,
+    byzCommitIndex,
+    byzActions>>
+
+
 TypeOK == 
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
-    /\ \A r, s \in R:
-        \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
+    \* /\ \A r, s \in R:
+    \*     \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
     /\ matchIndex \in [R -> [R -> Nat]]
     /\ crashCommitIndex \in [R -> Nat]
@@ -143,7 +151,7 @@ TypeOK ==
 \* We begin in view 0 with replica 1 as primary
 Init == 
     /\ view = [r \in R |-> 0]
-    /\ network = [r \in R |-> [s \in R |-> <<>>]]
+    \* /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
     /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ matchIndex = [r \in R |-> [s \in R |-> 0]]
@@ -151,10 +159,16 @@ Init ==
     /\ byzCommitIndex = [r \in R |-> 0]
     /\ byzActions = 0
 
+Next ==
+    TRUE
+
+====
+
 ----
 \* Actions
 
 \* Given a log l, return all indexes with direct quorum certificates
+\* @type: Seq($logEntry) => Set(Int);
 AllQCs(l) == UNION {l[i].qc : i \in DOMAIN l}
 
 Max0(S) == IF S = {} THEN 0 ELSE Max(S)
@@ -252,12 +266,12 @@ ReceiveVote(p, r) ==
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
-            Max({i \in DOMAIN log[p]: \E q \in CQ: \A n \in q: matchIndex'[p][n] >= i} \union {@})]
+            Max({i \in DOMAIN log[p]: \E q \in {q \in SUBSET R: Cardinality(q) >= 3}: \A n \in q: matchIndex'[p][n] >= i} \union {@})]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex,byzActions>>
 
 MaxQC(p) == 
     LET MaxQuorum == 
-        Max0({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i})
+        Max0({i \in DOMAIN log[p]: \E q \in {q \in SUBSET R: Cardinality(q) >= 3}: \A n \in q: matchIndex'[p][n] >= i})
     IN IF MaxQuorum > Max0(UNION {log[p][i].qc : i \in DOMAIN log[p]})
         THEN {MaxQuorum}
         ELSE {}
@@ -324,7 +338,7 @@ BecomePrimary(r) ==
     \* replica must be assigned the new view
     /\ r = Primary(view[r])
     \* a byz quorum must have voted for the replica
-    /\ \E q \in BQ:
+    /\ \E q \in {q \in SUBSET R: Cardinality(q) >= 3}:
         /\ \A n \in q: 
             /\ network[r][n] # <<>>
             /\ Head(network[r][n]).type = "ViewChange"
@@ -427,7 +441,7 @@ Next ==
 
 Fairness ==
     \* Only Timeout if there is no primary.
-    /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
+    /\ \A r \in HR: WF_vars(\A i \in DOMAIN primary: TRUE # primary[i] /\ Timeout(r))
     /\ \A r \in HR: WF_vars(BecomePrimary(r))
     /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
     /\ \A r \in HR: WF_vars(SendEntries(r))
@@ -484,9 +498,12 @@ ByzCommittedLogAppendOnlyProp ==
     [][\A i \in CR :
         IsPrefix(ByzCommitted(i), ByzCommitted(i)')]_vars
 
+MaxView ==
+    LET V == { view[i] : i \in DOMAIN view } IN CHOOSE n \in V: \A v \in V: v <= n
+
 \* At most one correct replica is primary in a view
 OneLeaderPerTermInv ==
-    \A v \in 0..Max(Range(view)), r \in CR :
+    \A v \in 0..MaxView, r \in CR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
