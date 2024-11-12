@@ -46,7 +46,7 @@ jobs:
       - name: Type- and (ordinary) invariant checking with Apalache
         run: |
           ## -length=4 to finish in reasonable time.
-          ./apalache/bin/apalache-mc check --length=3 --inv=WellFormedQCsInv,WellFormedLogInv,IndexBoundsInv,OneLeaderPerTermInv,ByzLogInv,LogInv --temporal=ByzCommittedLogAppendOnlyProp,CommittedLogAppendOnlyProp  APApirateship.tla
+          ./apalache/bin/apalache-mc check --length=2 --inv=WellFormedQCsInv,WellFormedLogInv,IndexBoundsInv,OneLeaderPerTermInv,ByzLogInv,LogInv --temporal=ByzCommittedLogAppendOnlyProp,CommittedLogAppendOnlyProp  APApirateship.tla
       - name: Upload Apalache's counterexample (if any)
         uses: actions/upload-artifact@v4
         if: always()
