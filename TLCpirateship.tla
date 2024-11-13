@@ -1,5 +1,12 @@
 ----- MODULE TLCpirateship -----
-EXTENDS pirateship
+EXTENDS pirateship, Functions
+
+
+ReplicaSeq ==
+    CHOOSE s \in [ 1..N -> R ]: Range(s) = R
+
+MCPrimary(v) ==
+    ReplicaSeq[(v % N) + 1]
 
 \* Add a few monitors/canaries to check if interesting states are reachable.
 
