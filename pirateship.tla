@@ -413,16 +413,18 @@ ByzPrimaryEquivocate(p) ==
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
-    \E r \in R: 
+    \/ \E r \in BR:
+        \/ ByzPrimaryEquivocate(r)
+        \/ \E s \in R: \* TODO CR because we don't need byz replicas to receive messages from other byz replicas?!
+            ByzOmitEntries(r,s)
+    \/ \E r \in R: 
         \/ SendEntries(r)
         \/ Timeout(r)
         \/ BecomePrimary(r)
-        \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
             \/ ReceiveNewLeader(r,s)
-            \/ ByzOmitEntries(r,s)
             \/ DiscardMessage(r,s)
 
 Fairness ==
