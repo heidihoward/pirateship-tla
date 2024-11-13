@@ -19,6 +19,16 @@ Primary(v) ==
     IF v % 4 = 2 THEN "2_OF_REPLICA" ELSE
                       "3_OF_REPLICA"
 
+Quorums ==
+    \* {q \in SUBSET R: Cardinality(q) >= 3}
+    {
+        {"0_OF_REPLICA", "1_OF_REPLICA", "2_OF_REPLICA"}, 
+        {"0_OF_REPLICA", "1_OF_REPLICA", "3_OF_REPLICA"},
+        {"0_OF_REPLICA", "2_OF_REPLICA", "3_OF_REPLICA"},
+        {"1_OF_REPLICA", "2_OF_REPLICA", "3_OF_REPLICA"},
+        {"0_OF_REPLICA", "1_OF_REPLICA", "2_OF_REPLICA","3_OF_REPLICA"}
+    }
+
 VARIABLE
     \* messages in transit between any pair of replicas
     \* @type: REPLICA -> (REPLICA -> $msg);
