@@ -154,8 +154,6 @@ Init ==
 ----
 \* Actions
 
-Max0(S) == IF S = {} THEN 0 ELSE Max(S)
-
 IsQC(e) ==
     e.qc # {}
 
@@ -171,6 +169,9 @@ HighestQCOverQC(l) ==
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
 
 Max2(a,b) == IF a > b THEN a ELSE b
+
+MaxQuorum(l, m, default) == 
+    Max({i \in DOMAIN l: \E q \in BQ: \A n \in q: m[n] >= i} \union {default})
 
 \* Replica r handling AppendEntries from primary p
 ReceiveEntries(r, p) ==
@@ -254,15 +255,13 @@ ReceiveVote(p, r) ==
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
-            Max({i \in DOMAIN log[p]: \E q \in CQ: \A n \in q: matchIndex'[p][n] >= i} \union {@})]
+            MaxQuorum(log[p], matchIndex'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex,byzActions>>
 
 MaxQC(p) == 
-    LET MaxQuorum == 
-        Max0({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i})
-    IN IF MaxQuorum > HighestQC(log[p])
-        THEN {MaxQuorum}
-        ELSE {}
+    IF MaxQuorum(log[p], matchIndex'[p], 0) > HighestQC(log[p])
+    THEN {MaxQuorum(log[p], matchIndex'[p], 0)}
+    ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
 SendEntries(p) ==
