@@ -154,13 +154,15 @@ Init ==
 ----
 \* Actions
 
-\* Given a log l, return all indexes with direct quorum certificates
-AllQCs(l) == UNION {l[i].qc : i \in DOMAIN l}
-
 Max0(S) == IF S = {} THEN 0 ELSE Max(S)
 
+IsQC(e) ==
+    e.qc # {}
+
 \* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
-HighestQC(l) == Max0(AllQCs(l))
+HighestQC(l) ==
+    LET idx == SelectLastInSeq(l, IsQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
 HighestQCOverQC(l) ==
