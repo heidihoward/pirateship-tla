@@ -258,9 +258,9 @@ ReceiveVote(p, r) ==
             MaxQuorum(log[p], matchIndex'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex,byzActions>>
 
-MaxQC(p) == 
-    IF MaxQuorum(log[p], matchIndex'[p], 0) > HighestQC(log[p])
-    THEN {MaxQuorum(log[p], matchIndex'[p], 0)}
+MaxQC(l, m) == 
+    IF MaxQuorum(l, m, 0) > HighestQC(l)
+    THEN {MaxQuorum(l, m, 0)}
     ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
@@ -274,7 +274,7 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
-            qc |-> MaxQC(p)])]
+            qc |-> MaxQC(log[p], matchIndex'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
