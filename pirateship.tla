@@ -171,7 +171,12 @@ HighestQCOverQC(l) ==
 Max2(a,b) == IF a > b THEN a ELSE b
 
 MaxQuorum(l, m, default) == 
-    Max({i \in DOMAIN l: \E q \in BQ: \A n \in q: m[n] >= i} \union {default})
+    LET RECURSIVE RMaxQuorum(_)
+        RMaxQuorum(i) ==
+            IF i = default THEN default
+            ELSE IF \E q \in BQ: \A n \in q: m[n] >= i
+                 THEN i ELSE RMaxQuorum(i-1)
+    IN RMaxQuorum(Len(l))
 
 \* Replica r handling AppendEntries from primary p
 ReceiveEntries(r, p) ==
