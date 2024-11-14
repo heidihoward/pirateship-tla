@@ -1,2 +1,4 @@
-states
-.vscode
+states/
+.vscode/
+_apalache-out/
+*.toolbox/
