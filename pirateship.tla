@@ -301,9 +301,8 @@ Timeout(r) ==
 
 \* The view of the highest qc in log l, -1 if log contains no qcs
 HighestQCView(l) == 
-    IF HighestQC(l) = 0
-    THEN -1
-    ELSE l[HighestQC(l)].view
+    LET idx == HighestQC(l) IN
+    IF idx = 0 THEN -1 ELSE l[idx].view
 
 \* True if log l is valid log choice from the set of logs ls.
 \* Assumes that l \in ls
