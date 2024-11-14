@@ -260,7 +260,7 @@ ReceiveVote(p, r) ==
 MaxQC(p) == 
     LET MaxQuorum == 
         Max0({i \in DOMAIN log[p]: \E q \in BQ: \A n \in q: matchIndex'[p][n] >= i})
-    IN IF MaxQuorum > Max0(UNION {log[p][i].qc : i \in DOMAIN log[p]})
+    IN IF MaxQuorum > HighestQC(log[p])
         THEN {MaxQuorum}
         ELSE {}
 
