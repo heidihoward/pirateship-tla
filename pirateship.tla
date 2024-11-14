@@ -310,15 +310,19 @@ LogChoiceRule(l,ls) ==
     \* if all logs are empty, then any l must be empty and a valid choice  
     \/ \A l2 \in ls: l2 = <<>>
     \/ /\ l # <<>>
-        \* l is valid if all other logs in ls are empty or l is from a higher view or l is from the same view but at least as long
-       /\ \A l2 \in ls:
-            l # l2 /\ l2 # <<>> 
-            =>  \/ HighestQCView(l) > HighestQCView(l2)
-                \/  /\ HighestQCView(l) = HighestQCView(l2)
-                    /\ Last(l).view > Last(l2).view
-                \/  /\ HighestQCView(l) = HighestQCView(l2)
-                    /\ Last(l).view = Last(l2).view 
-                    /\ Len(l) >= Len(l2)
+        \* l is valid if all other logs in ls are empty or l is from a higher view or 
+       /\ LET v1 == HighestQCView(l)                     
+          IN \A l2 \in ls:
+                \* l is valid if all other logs in ls are empty or...
+                l # l2 /\ l2 # <<>> 
+                =>  LET v2 == HighestQCView(l2) IN
+                    \* l is from a higher view or...
+                    \/ v1 > v2
+                    \* l is from the same view but at least as long
+                    \/ /\ v1 = v2
+                       /\ \/ Last(l).view > Last(l2).view
+                          \/ /\ Last(l).view = Last(l2).view 
+                             /\ Len(l) >= Len(l2)
 
 \* Replica r becomes primary
 BecomePrimary(r) ==
