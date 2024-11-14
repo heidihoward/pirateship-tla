@@ -166,9 +166,9 @@ HighestQC(l) ==
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
 HighestQCOverQC(l) ==
-    IF HighestQC(l) = 0
-    THEN 0
-    ELSE HighestQC(SubSeq(l,1,HighestQC(l)))
+    LET lidx == HighestQC(l)
+        idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
 
 Max2(a,b) == IF a > b THEN a ELSE b
 
