@@ -339,7 +339,8 @@ BecomePrimary(r) ==
             /\ Head(network[r][n]).type = "ViewChange"
             /\ view[r] = Head(network[r][n]).view
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
-            LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
+            \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
+            /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
         \* Need to update network to remove the view change message and send a NewLeader message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
