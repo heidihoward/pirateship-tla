@@ -2,3 +2,6 @@ states/
 .vscode/
 _apalache-out/
 *.toolbox/
+*_TTrace_*.bin
+*_TTrace_*.out
+*_TTrace_*.tla
