@@ -269,6 +269,7 @@ MaxQC(l, m) ==
     ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
+\* Compare: src/consensus/steady_state.rs#do_append_entries
 SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
@@ -289,6 +290,7 @@ SendEntries(p) ==
         /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* Replica r times out
+\* Compare: src/consensus/view_change.rs#do_init_view_change
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
@@ -329,6 +331,7 @@ LogChoiceRule(l,ls) ==
                              /\ Len(l) >= Len(l2)
 
 \* Replica r becomes primary
+\* Compare: src/consensus/view_change.rs#do_init_new_leader
 BecomePrimary(r) ==
     \* replica must be assigned the new view
     /\ r = Primary(view[r])
