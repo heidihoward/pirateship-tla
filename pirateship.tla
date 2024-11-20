@@ -240,9 +240,7 @@ ReceiveNewLeader(r, p) ==
     \* replica must update its crash commit index
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
-    \* replica updates its byz commit index
-    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
-    /\ UNCHANGED <<byzActions>>
+    /\ UNCHANGED <<byzActions, byzCommitIndex>>
 
 \* Primary p receiving votes from replica r
 ReceiveVote(p, r) ==
@@ -365,8 +363,7 @@ BecomePrimary(r) ==
     \* primary updates its commit indexes
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
-    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
-    /\ UNCHANGED <<view, matchIndex, byzActions>>
+    /\ UNCHANGED <<view, matchIndex, byzActions, byzCommitIndex>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
