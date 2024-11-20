@@ -100,7 +100,8 @@ AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
     \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
-    log: Log]
+    log: Log,
+    commitIndex: Nat]
 
 Votes == [
     type: {"Vote"},
@@ -169,6 +170,7 @@ HighestQCOverQC(l) ==
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
 
 Max2(a,b) == IF a > b THEN a ELSE b
+Min2(a,b) == IF a < b THEN a ELSE b
 
 MaxQuorum(l, m, default) == 
     LET RECURSIVE RMaxQuorum(_)
@@ -201,8 +203,9 @@ ReceiveEntries(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica updates its commit indexes
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestQC(log'[r]))]
+    \* replica updates its crash commit index provided the new commit index is greater than the current one
+    \* the only time a crash commit index can decrease is on the receipt of a NewLeader message if there's been a byz attack
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, Head(network[r][p]).commitIndex)]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
@@ -234,9 +237,10 @@ ReceiveNewLeader(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica updates its commit indexes
-    \* TODO: need to allow the crash commit to decrease in the case of a byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
+    \* replica must update its crash commit index
+    \* Crash commit index may be decreased if there's been an byz attack
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
+    \* replica updates its byz commit index
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<byzActions>>
 
@@ -286,7 +290,8 @@ SendEntries(p) ==
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
-                    log |-> log'[p]])]]
+                    log |-> log'[p],
+                    commitIndex |-> crashCommitIndex[p]])]]
         /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* Replica r times out
@@ -358,8 +363,8 @@ BecomePrimary(r) ==
     \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
     \* primary updates its commit indexes
-    \* TODO: need to allow the crash commit to decrease in the case of a byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@,HighestQC(log'[r]))]
+    \* Crash commit index may be decreased if there's been an byz attack
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<view, matchIndex, byzActions>>
 
@@ -406,7 +411,8 @@ ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
+        <<[Last(m.log) EXCEPT !.tx = 1]>>,
+    commitIndex |-> m.commitIndex
 ]
 
 
