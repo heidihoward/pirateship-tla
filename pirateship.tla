@@ -263,7 +263,7 @@ ReceiveVote(p, r) ==
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
             MaxQuorum(log[p], matchIndex'[p], @)]
-    /\ UNCHANGED <<view, log, primary, byzCommitIndex,byzActions>>
+    /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxQC(l, m) == 
     IF MaxQuorum(l, m, 0) > HighestQC(l)
