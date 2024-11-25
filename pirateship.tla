@@ -90,7 +90,7 @@ LogEntry == [
     view: Views, 
     tx: Txs,
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
-    qc: SUBSET QCs]
+    byzQC: SUBSET QCs]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
@@ -156,18 +156,18 @@ Init ==
 \* Actions
 
 IsQC(e) ==
-    e.qc # {}
+    e.byzQC # {}
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
 HighestQC(l) ==
     LET idx == SelectLastInSeq(l, IsQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
 HighestQCOverQC(l) ==
     LET lidx == HighestQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
@@ -282,7 +282,7 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
-            qc |-> MaxQC(log[p], matchIndex'[p])])]
+            byzQC |-> MaxQC(log[p], matchIndex'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -308,7 +308,7 @@ Timeout(r) ==
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
-\* The view of the highest qc in log l, -1 if log contains no qcs
+\* The view of the highest byzQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
     LET idx == HighestQC(l) IN
     IF idx = 0 THEN -1 ELSE l[idx].view
@@ -522,12 +522,12 @@ WellFormedLogInv ==
 WellFormedQCsInv ==
     \A r \in CR : 
         \A i \in DOMAIN log[r] : 
-            \A q \in log[r][i].qc :
+            \A q \in log[r][i].byzQC :
                 \* qcs are always for previous entries
                 /\ q < i
                 \* qcs are always formed in the current view 
                 /\ log[r][q].view = log[r][i].view
                 \* qcs are in increasing order
                 /\ \A j \in 1..i-1 : 
-                    \A qj \in log[r][j].qc: qj < q
+                    \A qj \in log[r][j].byzQC: qj < q
 ====
