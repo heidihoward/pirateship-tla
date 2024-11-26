@@ -83,14 +83,15 @@ Primary(v) ==
 \* Quorum certificates are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
-QCs == Nat
+QC == Nat
 
 \* Each log entry contains just a view, a txn and optionally, a quorum certificate
 LogEntry == [
     view: Views, 
     tx: Txs,
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
-    byzQC: SUBSET QCs]
+    byzQC: SUBSET QC,
+    crashQC: QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
@@ -100,8 +101,7 @@ AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
     \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
-    log: Log,
-    commitIndex: Nat]
+    log: Log]
 
 Votes == [
     type: {"Vote"},
@@ -158,14 +158,18 @@ Init ==
 IsQC(e) ==
     e.byzQC # {}
 
+\* Given a log l, returns the index of the highest log entry with a crash QC, 0 if the log contains no entries
+HighestCrashQC(l) ==
+    IF l = <<>> THEN 0 ELSE Last(l).crashQC
+
 \* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
-HighestQC(l) ==
+HighestByzQC(l) ==
     LET idx == SelectLastInSeq(l, IsQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 \* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
 HighestQCOverQC(l) ==
-    LET lidx == HighestQC(l)
+    LET lidx == HighestByzQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
@@ -205,7 +209,7 @@ ReceiveEntries(r, p) ==
         ]
     \* replica updates its crash commit index provided the new commit index is greater than the current one
     \* the only time a crash commit index can decrease is on the receipt of a NewLeader message if there's been a byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, Head(network[r][p]).commitIndex)]
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
@@ -266,7 +270,7 @@ ReceiveVote(p, r) ==
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxQC(l, m) == 
-    IF MaxQuorum(l, m, 0) > HighestQC(l)
+    IF MaxQuorum(l, m, 0) > HighestByzQC(l)
     THEN {MaxQuorum(l, m, 0)}
     ELSE {}
 
@@ -282,14 +286,14 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
+            crashQC |-> crashCommitIndex[p],
             byzQC |-> MaxQC(log[p], matchIndex'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
-                    log |-> log'[p],
-                    commitIndex |-> crashCommitIndex[p]])]]
+                    log |-> log'[p]])]]
         /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* Replica r times out
@@ -310,7 +314,7 @@ Timeout(r) ==
 
 \* The view of the highest byzQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
-    LET idx == HighestQC(l) IN
+    LET idx == HighestByzQC(l) IN
     IF idx = 0 THEN -1 ELSE l[idx].view
 
 \* True if log l is valid log choice from the set of logs ls.
@@ -408,8 +412,7 @@ ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>,
-    commitIndex |-> m.commitIndex
+        <<[Last(m.log) EXCEPT !.tx = 1]>>
 ]
 
 
