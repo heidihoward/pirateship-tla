@@ -184,7 +184,7 @@ MaxQuorum(l, m, default) ==
                  THEN i ELSE RMaxQuorum(i-1)
     IN RMaxQuorum(Len(l))
 
-\* Checks if a log l is well formed e.g. terms are monotonically increasing
+\* Checks if a log l is well formed e.g. views are monotonically increasing
 WellFormedLog(l) ==
     \A i \in DOMAIN l :
         \* check views are monotonically increasing
@@ -542,5 +542,11 @@ IndexBoundsInv ==
 
 WellFormedLogInv ==
     \A r \in CR : WellFormedLog(log[r])
+
+\* Classic CFT safety property - if a log entry is committed on one replica, it is present on crash quorum of replicas
+QuorumAgreementInv ==
+    byzActions = 0 => 
+        \A i \in R: \E q \in CQ: 
+            \A j \in q: IsPrefix(Committed(i), log[j])
 
 ====
