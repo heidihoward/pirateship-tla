@@ -162,12 +162,12 @@ IsQC(e) ==
 HighestCrashQC(l) ==
     IF l = <<>> THEN 0 ELSE Last(l).crashQC
 
-\* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
+\* Given a log l, returns the index of the highest log entry with a byzantine QC, 0 if the log contains no QCs
 HighestByzQC(l) ==
     LET idx == SelectLastInSeq(l, IsQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
-\* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
+\* Given a log l, returns the index of the highest log entry with a byzQC over a byzQC
 HighestQCOverQC(l) ==
     LET lidx == HighestByzQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
