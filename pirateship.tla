@@ -475,37 +475,36 @@ Next ==
     \/ ByzPrimaryEquivocate
     \/ DiscardMessage
     
-====
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
-NextOff == 
-    \E r \in R: 
-        \/ SendEntries(r)
-        \/ Timeout(r)
-        \/ BecomePrimary(r)
-        \/ \E s \in R: 
-            \/ ReceiveEntries(r,s)
-            \/ ReceiveVote(r,s)
-            \/ ReceiveNewLeader(r,s)
-            \/ ByzOmitEntries(r,s)
-            \/ ByzPrimaryEquivocate(r,s)
-            \/ DiscardMessage(r,s)
+\* NextOff == 
+\*     \E r \in R: 
+\*         \/ SendEntries(r)
+\*         \/ Timeout(r)
+\*         \/ BecomePrimary(r)
+\*         \/ \E s \in R: 
+\*             \/ ReceiveEntries(r,s)
+\*             \/ ReceiveVote(r,s)
+\*             \/ ReceiveNewLeader(r,s)
+\*             \/ ByzOmitEntries(r,s)
+\*             \/ ByzPrimaryEquivocate(r,s)
+\*             \/ DiscardMessage(r,s)
 
-Fairness ==
-    \* Only Timeout if there is no primary.
-    /\ \A r \in HR: WF_vars(\A i \in DOMAIN primary: TRUE # primary[i] /\ Timeout(r))
-    /\ \A r \in HR: WF_vars(BecomePrimary(r))
-    /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
-    /\ \A r \in HR: WF_vars(SendEntries(r))
-    /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
-    /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
-    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
-    \* Omit any byzantine actions from the fairness condition.
+\* Fairness ==
+\*     \* Only Timeout if there is no primary.
+\*     /\ \A r \in HR: WF_vars(\A i \in DOMAIN primary: TRUE # primary[i] /\ Timeout(r))
+\*     /\ \A r \in HR: WF_vars(BecomePrimary(r))
+\*     /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
+\*     /\ \A r \in HR: WF_vars(SendEntries(r))
+\*     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
+\*     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
+\*     /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+\*     \* Omit any byzantine actions from the fairness condition.
 
-Spec == 
-    /\ Init
-    /\ [][Next]_vars
-    /\ Fairness
+\* Spec == 
+\*     /\ Init
+\*     /\ [][Next]_vars
+\*     /\ Fairness
 
 ----
 \* Properties
