@@ -17,7 +17,9 @@ jobs:
         run: wget https://nightly.tlapl.us/dist/tla2tools.jar
       - name: Get (nightly) CommunityModules
         run: wget https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar
-      - name: Random simulation with TLC
+      - name: Random simulation with TLC (crash)
+        run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -simulate SIMpirateship.tla -config SIMpirateshipCrash.cfg
+      - name: Random simulation with TLC (byzantine)
         run: java -Dtlc2.TLC.stopAfter=600 -XX:+UseParallelGC -jar tla2tools.jar -workers auto -simulate SIMpirateship.tla
 
   tlc-verify:
