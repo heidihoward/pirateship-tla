@@ -184,6 +184,24 @@ MaxQuorum(l, m, default) ==
                  THEN i ELSE RMaxQuorum(i-1)
     IN RMaxQuorum(Len(l))
 
+\* Checks if a log l is well formed e.g. terms are monotonically increasing
+WellFormedLog(l) ==
+    \A i \in DOMAIN l :
+        \* check views are monotonically increasing
+        /\ i > 1 => l[i-1].view <= l[i].view
+        \* check byzQCs are well formed
+        /\ \A q \in l[i].byzQC :
+            \* byzQCs are always for previous entries
+            /\ q < i
+            \* byzQCs are always formed in the current view 
+            /\ l[q].view = l[i].view
+            \* byzQCs are in increasing order
+            /\ \A j \in 1..i-1 : 
+                \A qj \in l[j].byzQC: qj < q
+        \* check crashQCs are well formed
+        /\ l[i].crashQC < i
+        /\ i > 1 => l[i-1].crashQC <= l[i].crashQC
+
 \* Replica r handling AppendEntries from primary p
 ReceiveEntries(r, p) ==
     \* there must be at least one message pending
@@ -196,6 +214,8 @@ ReceiveEntries(r, p) ==
     /\ Last(Head(network[r][p]).log).view = view[r]
     \* the replica only appends (one entry at a time) to its log
     /\ log[r] = Front(Head(network[r][p]).log)
+    \* received log must be well formed
+    /\ WellFormedLog(Head(network[r][p]).log)
     \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
     \* we remove the AppendEntries message and reply with a Vote message.
@@ -223,6 +243,8 @@ ReceiveNewLeader(r, p) ==
     /\ Head(network[r][p]).type = "NewLeader"
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
+    \* received log must be well formed
+    /\ WellFormedLog(Head(network[r][p]).log)
     \* update the replica's local view
     \* note that we do not dispatch a view change message as a primary has already been elected
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
@@ -366,7 +388,8 @@ BecomePrimary(r) ==
     /\ primary' = [primary EXCEPT ![r] = TRUE]
     \* primary updates its commit indexes
     \* Crash commit index may be decreased if there's been an byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
+        ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
     /\ UNCHANGED <<view, matchIndex, byzActions, byzCommitIndex>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
@@ -518,19 +541,6 @@ IndexBoundsInv ==
         /\ byzCommitIndex[r] <= crashCommitIndex[r]
 
 WellFormedLogInv ==
-    \A r \in CR :
-        \A i, j \in DOMAIN log[r] :
-            i < j => log[r][i].view <= log[r][j].view
+    \A r \in CR : WellFormedLog(log[r])
 
-WellFormedQCsInv ==
-    \A r \in CR : 
-        \A i \in DOMAIN log[r] : 
-            \A q \in log[r][i].byzQC :
-                \* qcs are always for previous entries
-                /\ q < i
-                \* qcs are always formed in the current view 
-                /\ log[r][q].view = log[r][i].view
-                \* qcs are in increasing order
-                /\ \A j \in 1..i-1 : 
-                    \A qj \in log[r][j].byzQC: qj < q
 ====
