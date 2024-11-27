@@ -2,7 +2,7 @@
 \* This is a specification of the PirateShip consensus protocol.
 \* Message delivery is assumed to be ordered and reliable
 \* This spec does not model the fast path or reconfiguration
-\* We also assume all txns include signatures
+\* We also assume all txns are signed
 
 EXTENDS 
     Integers, 
@@ -12,6 +12,7 @@ EXTENDS
     SequencesExt
 
 ----
+\* Constants
 
 \* Set of replicas
 CONSTANT R
@@ -28,6 +29,9 @@ ASSUME Txs # {}
 \* Max number of byzantine actions
 \* This parameter is completely artificial and is used to limit the state space
 CONSTANT MaxByzActions
+
+----
+\* Variables
 
 VARIABLE
     \* messages in transit between any pair of replicas
@@ -60,10 +64,10 @@ vars == <<
 ----
 \* Helpers & Variable types
 
-\* Set of quourms for crash fault tolerance
+\* Set of quorums for crash fault tolerance
 CQ == {q \in SUBSET R: Cardinality(q) >= 3}
 
-\* Set of quourms for byzantine fault tolerance
+\* Set of quorums for byzantine fault tolerance
 BQ == {q \in SUBSET R: Cardinality(q) >= 3}
 
 \* Number of replicas
@@ -80,12 +84,12 @@ ReplicaSeq ==
 Primary(v) ==
     ReplicaSeq[(v % N) + 1]
 
-\* Quorum certificates are simply the index of the log entry they confirm
+\* Quorum certificates (QCs) are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
 QC == Nat
 
-\* Each log entry contains just a view, a txn and optionally, a quorum certificate
+\* Each log entry contains a view, a txn and optionally, quorum certificates for crash and byzantine faults
 LogEntry == [
     view: Views, 
     tx: Txs,
@@ -161,7 +165,7 @@ IsByzQC(e) ==
 IsCrashQC(e) ==
     e.crashQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a crash QC, 0 if the log contains no crash QCs
+\* Given a log l, returns the index of the highest log entry with a crashQC, 0 if the log contains no crashQCs
 HighestCrashQC(l) ==
     LET idx == SelectLastInSeq(l, IsCrashQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].crashQC)
