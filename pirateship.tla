@@ -39,7 +39,7 @@ VARIABLE
     \* flag indicating if each replica is a primary
     primary,
     \* (primary only) the highest log entry on each replica replicated in this view
-    matchIndex,
+    prepareQC,
     \* crash commit index of each replica
     crashCommitIndex,
     \* byzantine commit index of each replica
@@ -52,7 +52,7 @@ vars == <<
     view,  
     log, 
     primary, 
-    matchIndex,
+    prepareQC,
     crashCommitIndex,
     byzCommitIndex,
     byzActions>>
@@ -114,9 +114,9 @@ ViewChanges == [
     view: Views,
     log: Log]
 
-\* Currently, we use separate messages for NewLeader and AppendEntries, these could be merged
-NewLeaders == [
-    type: {"NewLeader"},
+\* Currently, we use separate messages for NewView and AppendEntries, these could be merged
+NewViews == [
+    type: {"NewView"},
     view: Views,
     log: Log]
 
@@ -125,7 +125,7 @@ Messages ==
     AppendEntries \union 
     Votes \union 
     ViewChanges \union 
-    NewLeaders
+    NewViews
 
 TypeOK == 
     /\ view \in [R -> Views]
@@ -133,7 +133,7 @@ TypeOK ==
     /\ \A r, s \in R:
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
-    /\ matchIndex \in [R -> [R -> Nat]]
+    /\ prepareQC \in [R -> [R -> Nat]]
     /\ crashCommitIndex \in [R -> Nat]
     /\ byzCommitIndex \in [R -> Nat]
     /\ byzActions \in Nat
@@ -147,7 +147,7 @@ Init ==
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
     /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
-    /\ matchIndex = [r \in R |-> [s \in R |-> 0]]
+    /\ prepareQC = [r \in R |-> [s \in R |-> 0]]
     /\ crashCommitIndex = [r \in R |-> 0]
     /\ byzCommitIndex = [r \in R |-> 0]
     /\ byzActions = 0
@@ -236,19 +236,19 @@ ReceiveEntries(r, p) ==
             ])
         ]
     \* replica updates its crash commit index provided the new commit index is greater than the current one
-    \* the only time a crash commit index can decrease is on the receipt of a NewLeader message if there's been a byz attack
+    \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
-    /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
+    /\ UNCHANGED <<primary, view, prepareQC, byzActions>>
 
-\* Replica r handling NewLeader from primary p
-\* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewLeader message
-ReceiveNewLeader(r, p) ==
+\* Replica r handling NewView from primary p
+\* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewView message
+ReceiveNewView(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
-    \* and the next message is a NewLeader
-    /\ Head(network[r][p]).type = "NewLeader"
+    \* and the next message is a NewView
+    /\ Head(network[r][p]).type = "NewView"
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
     \* received log must be well formed
@@ -258,11 +258,11 @@ ReceiveNewLeader(r, p) ==
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
-    \* reset matchIndexes, in case view was updated
-    /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
+    \* reset prepareQCs, in case view was updated
+    /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
-    \* we remove the NewLeader message and reply with a Vote message.
+    \* we remove the NewView message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
@@ -284,11 +284,11 @@ ReceiveVote(p, r) ==
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
     /\ view[p] = Head(network[p][r]).view
-    /\ \* match index only updated if the log entry is in the current view, this means that the match index only updated in response to AppendEntries
+    /\ \* prepareQC only updated if the log entry is in the current view, this means that the prepareQC only updated in response to AppendEntries
         IF \/ Head(network[p][r]).log = <<>> 
            \/ Last(Head(network[p][r]).log).view # view[p]
-        THEN UNCHANGED matchIndex
-        ELSE matchIndex' = [matchIndex EXCEPT 
+        THEN UNCHANGED prepareQC
+        ELSE prepareQC' = [prepareQC EXCEPT 
             ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
             THEN Len(Head(network[p][r]).log) 
             ELSE @]
@@ -296,7 +296,7 @@ ReceiveVote(p, r) ==
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
-            MaxQuorum(log[p], matchIndex'[p], @)]
+            MaxQuorum(log[p], prepareQC'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxCrashQC(l,p) ==
@@ -315,14 +315,14 @@ SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
     /\ \E tx \in Txs:
-        \* primary will not send an appendEntries to itself so update matchIndex here
-        /\ matchIndex' = [matchIndex EXCEPT ![p][p] = Len(log[p]) + 1]
+        \* primary will not send an appendEntries to itself so update prepareQC here
+        /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
             crashQC |-> MaxCrashQC(log[p], p),
-            byzQC |-> MaxByzQC(log[p], matchIndex'[p])])]
+            byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -343,8 +343,8 @@ Timeout(r) ==
         ]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
-    \* reset matchIndexes, these are not used until the node is elected primary
-    /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
+    \* reset prepareQCs, these are not used until the node is elected primary
+    /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* The view of the highest byzQC in log l, -1 if log contains no qcs
@@ -387,13 +387,13 @@ BecomePrimary(r) ==
             \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
             /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
-        \* Need to update network to remove the view change message and send a NewLeader message to all replicas
+        \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
             ELSE IF r1 # r /\ r2 = r 
                 THEN Append(network[r1][r2], [ 
-                    type |-> "NewLeader",
+                    type |-> "NewView",
                     view |-> view[r],
                     log |-> log'[r]])
                 ELSE network[r1][r2]]]
@@ -403,7 +403,7 @@ BecomePrimary(r) ==
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
-    /\ UNCHANGED <<view, matchIndex, byzActions, byzCommitIndex>>
+    /\ UNCHANGED <<view, prepareQC, byzActions, byzCommitIndex>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
@@ -412,7 +412,7 @@ DiscardMessage(r, s) ==
     /\ \/ Head(network[r][s]).view < view[r]
        \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
     /\ network' = [network EXCEPT ![r][s] = Tail(@)]
-    /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex, byzActions>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions>>
 
 ----
 \* Byzantine actions
@@ -441,7 +441,7 @@ ByzOmitEntries(r, p) ==
             log |-> Head(network[r][p]).log
             ])
         ]
-    /\ UNCHANGED <<primary, view, matchIndex, crashCommitIndex, byzCommitIndex, log>>
+    /\ UNCHANGED <<primary, view, prepareQC, crashCommitIndex, byzCommitIndex, log>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
 ModifyAppendEntries(m) == [
@@ -463,7 +463,7 @@ ByzPrimaryEquivocate(p) ==
         /\ Head(network[r][p]).log # <<>>
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, primary, matchIndex, crashCommitIndex, byzCommitIndex>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex>>
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
@@ -479,7 +479,7 @@ Next ==
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
-            \/ ReceiveNewLeader(r,s)
+            \/ ReceiveNewView(r,s)
             \/ DiscardMessage(r,s)
 
 Fairness ==
@@ -490,7 +490,7 @@ Fairness ==
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
-    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveNewView(r,s))
     \* Omit any byzantine actions from the fairness condition.
 
 Spec == 
