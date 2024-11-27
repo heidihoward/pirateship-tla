@@ -83,14 +83,15 @@ Primary(v) ==
 \* Quorum certificates are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
-QCs == Nat
+QC == Nat
 
 \* Each log entry contains just a view, a txn and optionally, a quorum certificate
 LogEntry == [
     view: Views, 
     tx: Txs,
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
-    qc: SUBSET QCs]
+    byzQC: SUBSET QC,
+    crashQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
@@ -100,8 +101,7 @@ AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
     \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
-    log: Log,
-    commitIndex: Nat]
+    log: Log]
 
 Votes == [
     type: {"Vote"},
@@ -155,19 +155,27 @@ Init ==
 ----
 \* Actions
 
-IsQC(e) ==
-    e.qc # {}
+IsByzQC(e) ==
+    e.byzQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a quorum certificate, 0 if the log contains no QCs
-HighestQC(l) ==
-    LET idx == SelectLastInSeq(l, IsQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
+IsCrashQC(e) ==
+    e.crashQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a quorum certificate over a quorum certificate
+\* Given a log l, returns the index of the highest log entry with a crash QC, 0 if the log contains no crash QCs
+HighestCrashQC(l) ==
+    LET idx == SelectLastInSeq(l, IsCrashQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].crashQC)
+
+\* Given a log l, returns the index of the highest log entry with a byzQC, 0 if the log contains no byzQCs
+HighestByzQC(l) ==
+    LET idx == SelectLastInSeq(l, IsByzQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
+
+\* Given a log l, returns the index of the highest log entry with a byzQC over a byzQC
 HighestQCOverQC(l) ==
-    LET lidx == HighestQC(l)
-        idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].qc)
+    LET lidx == HighestByzQC(l)
+        idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
@@ -179,6 +187,28 @@ MaxQuorum(l, m, default) ==
             ELSE IF \E q \in BQ: \A n \in q: m[n] >= i
                  THEN i ELSE RMaxQuorum(i-1)
     IN RMaxQuorum(Len(l))
+
+\* Checks if a log l is well formed e.g. views are monotonically increasing
+WellFormedLog(l) ==
+    \A i \in DOMAIN l :
+        \* check views are monotonically increasing
+        /\ i > 1 => l[i-1].view <= l[i].view
+        \* check byzQCs are well formed
+        /\ \A q \in l[i].byzQC :
+            \* byzQCs are always for previous entries
+            /\ q < i
+            \* byzQCs are always formed in the current view 
+            /\ l[q].view = l[i].view
+            \* byzQCs are in increasing order
+            /\ \A j \in 1..i-1 : 
+                \A qj \in l[j].byzQC: qj < q
+        \* check crashQCs are well formed
+        /\ \A q \in l[i].crashQC :
+            \* crashQCs are always for previous entries
+            /\ q < i
+            \* crashQCs are in increasing order
+            /\ \A j \in 1..i-1 : 
+                \A qj \in l[j].crashQC: qj < q
 
 \* Replica r handling AppendEntries from primary p
 ReceiveEntries(r, p) ==
@@ -192,6 +222,8 @@ ReceiveEntries(r, p) ==
     /\ Last(Head(network[r][p]).log).view = view[r]
     \* the replica only appends (one entry at a time) to its log
     /\ log[r] = Front(Head(network[r][p]).log)
+    \* received log must be well formed
+    /\ WellFormedLog(Head(network[r][p]).log)
     \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
     \* we remove the AppendEntries message and reply with a Vote message.
@@ -205,7 +237,7 @@ ReceiveEntries(r, p) ==
         ]
     \* replica updates its crash commit index provided the new commit index is greater than the current one
     \* the only time a crash commit index can decrease is on the receipt of a NewLeader message if there's been a byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, Head(network[r][p]).commitIndex)]
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, matchIndex, byzActions>>
@@ -219,6 +251,8 @@ ReceiveNewLeader(r, p) ==
     /\ Head(network[r][p]).type = "NewLeader"
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
+    \* received log must be well formed
+    /\ WellFormedLog(Head(network[r][p]).log)
     \* update the replica's local view
     \* note that we do not dispatch a view change message as a primary has already been elected
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
@@ -265,8 +299,13 @@ ReceiveVote(p, r) ==
             MaxQuorum(log[p], matchIndex'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
-MaxQC(l, m) == 
-    IF MaxQuorum(l, m, 0) > HighestQC(l)
+MaxCrashQC(l,p) ==
+    IF crashCommitIndex[p] > HighestCrashQC(l)
+    THEN {crashCommitIndex[p]}
+    ELSE {}
+
+MaxByzQC(l, m) == 
+    IF MaxQuorum(l, m, 0) > HighestByzQC(l)
     THEN {MaxQuorum(l, m, 0)}
     ELSE {}
 
@@ -282,14 +321,14 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
-            qc |-> MaxQC(log[p], matchIndex'[p])])]
+            crashQC |-> MaxCrashQC(log[p], p),
+            byzQC |-> MaxByzQC(log[p], matchIndex'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
-                    log |-> log'[p],
-                    commitIndex |-> crashCommitIndex[p]])]]
+                    log |-> log'[p]])]]
         /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* Replica r times out
@@ -308,9 +347,9 @@ Timeout(r) ==
     /\ matchIndex' = [matchIndex EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
-\* The view of the highest qc in log l, -1 if log contains no qcs
+\* The view of the highest byzQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
-    LET idx == HighestQC(l) IN
+    LET idx == HighestByzQC(l) IN
     IF idx = 0 THEN -1 ELSE l[idx].view
 
 \* True if log l is valid log choice from the set of logs ls.
@@ -362,7 +401,8 @@ BecomePrimary(r) ==
     /\ primary' = [primary EXCEPT ![r] = TRUE]
     \* primary updates its commit indexes
     \* Crash commit index may be decreased if there's been an byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
+    /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
+        ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
     /\ UNCHANGED <<view, matchIndex, byzActions, byzCommitIndex>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
@@ -408,8 +448,7 @@ ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>,
-    commitIndex |-> m.commitIndex
+        <<[Last(m.log) EXCEPT !.tx = 1]>>
 ]
 
 
@@ -515,19 +554,12 @@ IndexBoundsInv ==
         /\ byzCommitIndex[r] <= crashCommitIndex[r]
 
 WellFormedLogInv ==
-    \A r \in CR :
-        \A i, j \in DOMAIN log[r] :
-            i < j => log[r][i].view <= log[r][j].view
+    \A r \in CR : WellFormedLog(log[r])
 
-WellFormedQCsInv ==
-    \A r \in CR : 
-        \A i \in DOMAIN log[r] : 
-            \A q \in log[r][i].qc :
-                \* qcs are always for previous entries
-                /\ q < i
-                \* qcs are always formed in the current view 
-                /\ log[r][q].view = log[r][i].view
-                \* qcs are in increasing order
-                /\ \A j \in 1..i-1 : 
-                    \A qj \in log[r][j].qc: qj < q
+\* Classic CFT safety property - if a log entry is committed on one replica, it is present on crash quorum of replicas
+QuorumAgreementInv ==
+    byzActions = 0 => 
+        \A i \in R: \E q \in CQ: 
+            \A j \in q: IsPrefix(Committed(i), log[j])
+
 ====
