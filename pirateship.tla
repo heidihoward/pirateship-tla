@@ -114,9 +114,9 @@ ViewChanges == [
     view: Views,
     log: Log]
 
-\* Currently, we use separate messages for NewLeader and AppendEntries, these could be merged
-NewLeaders == [
-    type: {"NewLeader"},
+\* Currently, we use separate messages for NewView and AppendEntries, these could be merged
+NewViews == [
+    type: {"NewView"},
     view: Views,
     log: Log]
 
@@ -125,7 +125,7 @@ Messages ==
     AppendEntries \union 
     Votes \union 
     ViewChanges \union 
-    NewLeaders
+    NewViews
 
 TypeOK == 
     /\ view \in [R -> Views]
@@ -236,19 +236,19 @@ ReceiveEntries(r, p) ==
             ])
         ]
     \* replica updates its crash commit index provided the new commit index is greater than the current one
-    \* the only time a crash commit index can decrease is on the receipt of a NewLeader message if there's been a byz attack
+    \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions>>
 
-\* Replica r handling NewLeader from primary p
-\* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewLeader message
-ReceiveNewLeader(r, p) ==
+\* Replica r handling NewView from primary p
+\* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewView message
+ReceiveNewView(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
-    \* and the next message is a NewLeader
-    /\ Head(network[r][p]).type = "NewLeader"
+    \* and the next message is a NewView
+    /\ Head(network[r][p]).type = "NewView"
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
     \* received log must be well formed
@@ -262,7 +262,7 @@ ReceiveNewLeader(r, p) ==
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
     /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
-    \* we remove the NewLeader message and reply with a Vote message.
+    \* we remove the NewView message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
@@ -387,13 +387,13 @@ BecomePrimary(r) ==
             \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
             /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
             /\ log' = [log EXCEPT ![r] = l1]
-        \* Need to update network to remove the view change message and send a NewLeader message to all replicas
+        \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
             THEN Tail(network[r1][r2]) 
             ELSE IF r1 # r /\ r2 = r 
                 THEN Append(network[r1][r2], [ 
-                    type |-> "NewLeader",
+                    type |-> "NewView",
                     view |-> view[r],
                     log |-> log'[r]])
                 ELSE network[r1][r2]]]
@@ -479,7 +479,7 @@ Next ==
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
-            \/ ReceiveNewLeader(r,s)
+            \/ ReceiveNewView(r,s)
             \/ DiscardMessage(r,s)
 
 Fairness ==
@@ -490,7 +490,7 @@ Fairness ==
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
-    /\ \A r,s \in HR: WF_vars(ReceiveNewLeader(r,s))
+    /\ \A r,s \in HR: WF_vars(ReceiveNewView(r,s))
     \* Omit any byzantine actions from the fairness condition.
 
 Spec == 
