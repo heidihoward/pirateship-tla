@@ -91,7 +91,7 @@ LogEntry == [
     tx: Txs,
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
-    crashQC: QC]
+    crashQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
@@ -155,22 +155,26 @@ Init ==
 ----
 \* Actions
 
-IsQC(e) ==
+IsByzQC(e) ==
     e.byzQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a crash QC, 0 if the log contains no entries
-HighestCrashQC(l) ==
-    IF l = <<>> THEN 0 ELSE Last(l).crashQC
+IsCrashQC(e) ==
+    e.crashQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a byzantine QC, 0 if the log contains no QCs
+\* Given a log l, returns the index of the highest log entry with a crash QC, 0 if the log contains no crash QCs
+HighestCrashQC(l) ==
+    LET idx == SelectLastInSeq(l, IsCrashQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].crashQC)
+
+\* Given a log l, returns the index of the highest log entry with a byzQC, 0 if the log contains no byzQCs
 HighestByzQC(l) ==
-    LET idx == SelectLastInSeq(l, IsQC)
+    LET idx == SelectLastInSeq(l, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 \* Given a log l, returns the index of the highest log entry with a byzQC over a byzQC
 HighestQCOverQC(l) ==
     LET lidx == HighestByzQC(l)
-        idx == SelectLastInSubSeq(l, 1, lidx, IsQC)
+        idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 Max2(a,b) == IF a > b THEN a ELSE b
@@ -199,8 +203,12 @@ WellFormedLog(l) ==
             /\ \A j \in 1..i-1 : 
                 \A qj \in l[j].byzQC: qj < q
         \* check crashQCs are well formed
-        /\ l[i].crashQC < i
-        /\ i > 1 => l[i-1].crashQC <= l[i].crashQC
+        /\ \A q \in l[i].crashQC :
+            \* crashQCs are always for previous entries
+            /\ q < i
+            \* crashQCs are in increasing order
+            /\ \A j \in 1..i-1 : 
+                \A qj \in l[j].crashQC: qj < q
 
 \* Replica r handling AppendEntries from primary p
 ReceiveEntries(r, p) ==
@@ -291,7 +299,12 @@ ReceiveVote(p, r) ==
             MaxQuorum(log[p], matchIndex'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
-MaxQC(l, m) == 
+MaxCrashQC(l,p) ==
+    IF crashCommitIndex[p] > HighestCrashQC(l)
+    THEN {crashCommitIndex[p]}
+    ELSE {}
+
+MaxByzQC(l, m) == 
     IF MaxQuorum(l, m, 0) > HighestByzQC(l)
     THEN {MaxQuorum(l, m, 0)}
     ELSE {}
@@ -308,8 +321,8 @@ SendEntries(p) ==
         /\ log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p], 
             tx |-> tx,
-            crashQC |-> crashCommitIndex[p],
-            byzQC |-> MaxQC(log[p], matchIndex'[p])])]
+            crashQC |-> MaxCrashQC(log[p], p),
+            byzQC |-> MaxByzQC(log[p], matchIndex'[p])])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
