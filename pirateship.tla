@@ -284,7 +284,7 @@ ReceiveVote(p, r) ==
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
     /\ view[p] = Head(network[p][r]).view
-    /\ \* match index only updated if the log entry is in the current view, this means that the match index only updated in response to AppendEntries
+    /\ \* prepareQC only updated if the log entry is in the current view, this means that the prepareQC only updated in response to AppendEntries
         IF \/ Head(network[p][r]).log = <<>> 
            \/ Last(Head(network[p][r]).log).view # view[p]
         THEN UNCHANGED prepareQC
