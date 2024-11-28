@@ -1,5 +1,5 @@
 ---- MODULE MCpirateship ----
-EXTENDS TLCpirateship
+EXTENDS TLCpirateship, ActionConstraint
 
 CONSTANT MCViews
 
