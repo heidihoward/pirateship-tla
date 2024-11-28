@@ -266,6 +266,7 @@ ReceiveNewView(r, p) ==
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
+    /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, in case view was updated
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
@@ -282,7 +283,15 @@ ReceiveNewView(r, p) ==
     \* replica must update its crash commit index
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
-    /\ UNCHANGED <<byzActions, byzCommitIndex, viewStable>>
+    /\ UNCHANGED <<byzActions, byzCommitIndex>>
+
+\* True iff primary p is in a stable view
+\* A view is stable when a byzantine quorum have the view's first log entry
+CheckViewStability(p) ==
+    LET inView(e) == e.view=view[p] IN
+    \E Q \in BQ: 
+        \A q \in Q: 
+            prepareQC'[p][q] >= SelectInSeq(log[p], inView)
 
 \* Primary p receiving votes from replica r
 ReceiveVote(p, r) ==
@@ -298,10 +307,15 @@ ReceiveVote(p, r) ==
         ELSE @]
     \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
-    /\ crashCommitIndex' = 
-        [crashCommitIndex EXCEPT ![p] = 
-            MaxQuorum(log[p], prepareQC'[p], @)]
-    /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions, viewStable>>
+    \* if view is not already stable, check if it is now
+    /\ viewStable' = [viewStable EXCEPT ![p] = 
+            IF @ THEN @ ELSE CheckViewStability(p)]
+    \* If view is stable, then the primary can update its commit indexes
+    /\ IF viewStable'[p]
+        THEN crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
+                MaxQuorum(log[p], prepareQC'[p], @)]
+        ELSE UNCHANGED crashCommitIndex
+    /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxCrashQC(l,p) ==
     IF crashCommitIndex[p] > HighestCrashQC(l)
@@ -318,6 +332,8 @@ MaxByzQC(l, m) ==
 SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
+    \* and view must be stable
+    /\ viewStable[p]
     /\ \E tx \in Txs:
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
@@ -348,9 +364,10 @@ Timeout(r) ==
         ]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
+    /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, these are not used until the node is elected primary
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
-    /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
+    /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
 
 \* The view of the highest byzQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
@@ -397,6 +414,7 @@ BecomePrimary(r) ==
                 tx |-> <<>>,
                 crashQC |-> {},
                 byzQC |-> {}])]
+            /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
@@ -413,7 +431,7 @@ BecomePrimary(r) ==
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
-    /\ UNCHANGED <<view, prepareQC, byzActions, byzCommitIndex, viewStable>>
+    /\ UNCHANGED <<view, byzActions, byzCommitIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
