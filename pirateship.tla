@@ -92,7 +92,7 @@ QC == Nat
 \* Each log entry contains a view, a txn and optionally, quorum certificates for crash and byzantine faults
 LogEntry == [
     view: Views, 
-    tx: Txs,
+    tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
     crashQC: SUBSET QC]
@@ -323,8 +323,9 @@ SendEntries(p) ==
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
         /\ log' = [log EXCEPT ![p] = Append(@, [
-            view |-> view[p], 
-            tx |-> tx,
+            view |-> view[p],
+            \* for simplicity, each txn batch includes a single txn
+            tx |-> <<tx>>,
             crashQC |-> MaxCrashQC(log[p], p),
             byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
         /\ network' = 
@@ -452,7 +453,7 @@ ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
+        <<[Last(m.log) EXCEPT !.tx = <<1>>]>>
 ]
 
 
