@@ -288,14 +288,10 @@ ReceiveVote(p, r) ==
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
     /\ view[p] = Head(network[p][r]).view
-    /\ \* prepareQC only updated if the log entry is in the current view, this means that the prepareQC only updated in response to AppendEntries
-        IF \/ Head(network[p][r]).log = <<>> 
-           \/ Last(Head(network[p][r]).log).view # view[p]
-        THEN UNCHANGED prepareQC
-        ELSE prepareQC' = [prepareQC EXCEPT 
-            ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
-            THEN Len(Head(network[p][r]).log) 
-            ELSE @]
+    /\ prepareQC' = [prepareQC EXCEPT 
+        ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
+        THEN Len(Head(network[p][r]).log) 
+        ELSE @]
     \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
@@ -391,7 +387,12 @@ BecomePrimary(r) ==
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
             \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
             /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
-            /\ log' = [log EXCEPT ![r] = l1]
+            \* Primary adopts chosen log and adds a new entry in the new view
+            /\ log' = [log EXCEPT ![r] = Append(l1, [
+                view |-> view[r],
+                tx |-> <<>>,
+                crashQC |-> {},
+                byzQC |-> {}])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
