@@ -325,7 +325,7 @@ ReceiveVote(p, r) ==
             /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
                 HighestByzQC(SubSeq(log[p],1,MaxByzQuorum(log[p], prepareQC'[p], 0)))]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
-    /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
+    /\ UNCHANGED <<view, log, primary, byzActions>>
 
 MaxCrashQC(l,p) ==
     IF crashCommitIndex[p] > HighestCrashQC(l)
