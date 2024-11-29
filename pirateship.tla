@@ -319,10 +319,12 @@ ReceiveVote(p, r) ==
     /\ viewStable' = [viewStable EXCEPT ![p] = 
             IF @ THEN @ ELSE CheckViewStability(p)]
     \* If view is stable, then the primary can update its commit indexes
-    /\ IF viewStable'[p]
-        THEN crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
+    /\ IF viewStable'[p] THEN 
+            /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
                 MaxCrashQuorum(log[p], prepareQC'[p], @)]
-        ELSE UNCHANGED crashCommitIndex
+            /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
+                HighestByzQC(SubSeq(log[p],1,MaxByzQuorum(log[p], prepareQC'[p], 0)))]
+        ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxCrashQC(l,p) ==
