@@ -184,7 +184,15 @@ HighestQCOverQC(l) ==
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
 
-MaxQuorum(l, m, default) == 
+MaxCrashQuorum(l, m, default) == 
+    LET RECURSIVE RMaxQuorum(_)
+        RMaxQuorum(i) ==
+            IF i = default THEN default
+            ELSE IF \E q \in CQ: \A n \in q: m[n] >= i
+                 THEN i ELSE RMaxQuorum(i-1)
+    IN RMaxQuorum(Len(l))
+
+MaxByzQuorum(l, m, default) == 
     LET RECURSIVE RMaxQuorum(_)
         RMaxQuorum(i) ==
             IF i = default THEN default
@@ -300,7 +308,7 @@ ReceiveVote(p, r) ==
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
     /\ crashCommitIndex' = 
         [crashCommitIndex EXCEPT ![p] = 
-            MaxQuorum(log[p], prepareQC'[p], @)]
+            MaxCrashQuorum(log[p], prepareQC'[p], @)]
     /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
 
 MaxCrashQC(l,p) ==
@@ -309,8 +317,8 @@ MaxCrashQC(l,p) ==
     ELSE {}
 
 MaxByzQC(l, m) == 
-    IF MaxQuorum(l, m, 0) > HighestByzQC(l)
-    THEN {MaxQuorum(l, m, 0)}
+    IF MaxByzQuorum(l, m, 0) > HighestByzQC(l)
+    THEN {MaxByzQuorum(l, m, 0)}
     ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
