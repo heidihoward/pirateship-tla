@@ -20,7 +20,7 @@ ASSUME R # {}
 
 \* Byzantine replicas
 CONSTANT BR
-ASSUME BR \subseteq R
+ASSUME BR \subseteq R /\ Cardinality(R) >= 3*Cardinality(BR) + 1
 
 \* Set of possible transactions
 CONSTANT Txs
@@ -64,14 +64,14 @@ vars == <<
 ----
 \* Helpers & Variable types
 
-\* Set of quorums for crash fault tolerance
-CQ == {q \in SUBSET R: Cardinality(q) >= 3}
-
-\* Set of quorums for byzantine fault tolerance
-BQ == {q \in SUBSET R: Cardinality(q) >= 3}
-
 \* Number of replicas
 N == Cardinality(R)
+
+\* Set of quorums for crash fault tolerance (simple majority).
+CQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 2)}
+
+\* Set of quorums for byzantine fault tolerance (supermajority).
+BQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
 
 \* Honest replicas
 HR == R \ BR
