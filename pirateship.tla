@@ -562,9 +562,13 @@ ByzLogInv ==
         \/ IsPrefix(ByzCommitted(j),ByzCommitted(i))
 
 \* If no byzantine actions have been taken, then each replica only appends to its committed log
+\* Note that is invariant allows empty blocks (sent at the start of a view) to be rolled back
 CommittedLogAppendOnlyProp ==
-    [][byzActions = 0 => \A i \in R :
-        IsPrefix(Committed(i), Committed(i)')]_vars
+    [][byzActions = 0 => 
+        \A i \in R : crashCommitIndex[i] > 0 =>
+            \A k \in 1..crashCommitIndex[i]: 
+                \/ log[i][k] = log'[i][k]
+                \/ log[i][k].tx = <<>>]_vars
 
 \* Each correct replica only appends to its byzantine committed log
 ByzCommittedLogAppendOnlyProp ==
