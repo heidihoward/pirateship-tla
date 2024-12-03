@@ -4,9 +4,10 @@ EXTENDS TLCpirateship, TLC
 PS == INSTANCE pirateship
 
 SIMTimeout(r) ==
-    \* TODO: revise this
-    \* /\ \/ 1 = RandomElement(1..10)
-    \*    \/ TRUE \notin Range(primary)
+    /\ \/ 1 = RandomElement(1..10)
+       \* There is no primary in the highest view.
+       \/ LET S == { s \in R : view[s] = Max(Range(view))} 
+          IN TRUE \notin Range([ s \in S |-> primary[s] ])
     /\ PS!Timeout(r)
 
 ====
