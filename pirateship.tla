@@ -49,7 +49,9 @@ VARIABLE
     \* byzantine commit index of each replica
     byzCommitIndex,
     \* total number of byzantine actions taken so far by any byzantine replica
-    byzActions
+    byzActions,
+    \* (primary only) flag indicating if the primary has stabilized the view
+    viewStable
 
 vars == <<
     network,
@@ -59,7 +61,8 @@ vars == <<
     prepareQC,
     crashCommitIndex,
     byzCommitIndex,
-    byzActions>>
+    byzActions,
+    viewStable>>
 
 ----
 \* Helpers & Variable types
@@ -92,7 +95,7 @@ QC == Nat
 \* Each log entry contains a view, a txn and optionally, quorum certificates for crash and byzantine faults
 LogEntry == [
     view: Views, 
-    tx: Txs,
+    tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
     crashQC: SUBSET QC]
@@ -155,6 +158,7 @@ Init ==
     /\ crashCommitIndex = [r \in R |-> 0]
     /\ byzCommitIndex = [r \in R |-> 0]
     /\ byzActions = 0
+    /\ viewStable = primary
 
 ----
 \* Actions
@@ -244,7 +248,7 @@ ReceiveEntries(r, p) ==
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
     /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
-    /\ UNCHANGED <<primary, view, prepareQC, byzActions>>
+    /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
 \* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewView message
@@ -262,6 +266,7 @@ ReceiveNewView(r, p) ==
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
+    /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, in case view was updated
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     \* the replica replaces its log with the received log
@@ -280,6 +285,14 @@ ReceiveNewView(r, p) ==
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
     /\ UNCHANGED <<byzActions, byzCommitIndex>>
 
+\* True iff primary p is in a stable view
+\* A view is stable when a byzantine quorum have the view's first log entry
+CheckViewStability(p) ==
+    LET inView(e) == e.view=view[p] IN
+    \E Q \in BQ: 
+        \A q \in Q: 
+            prepareQC'[p][q] >= SelectInSeq(log[p], inView)
+
 \* Primary p receiving votes from replica r
 ReceiveVote(p, r) ==
     \* p must be the primary
@@ -288,20 +301,23 @@ ReceiveVote(p, r) ==
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
     /\ view[p] = Head(network[p][r]).view
-    /\ \* prepareQC only updated if the log entry is in the current view, this means that the prepareQC only updated in response to AppendEntries
-        IF \/ Head(network[p][r]).log = <<>> 
-           \/ Last(Head(network[p][r]).log).view # view[p]
-        THEN UNCHANGED prepareQC
-        ELSE prepareQC' = [prepareQC EXCEPT 
-            ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
-            THEN Len(Head(network[p][r]).log) 
-            ELSE @]
+    /\ prepareQC' = [prepareQC EXCEPT 
+        ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
+        THEN Len(Head(network[p][r]).log) 
+        ELSE @]
     \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
-    /\ crashCommitIndex' = 
-        [crashCommitIndex EXCEPT ![p] = 
-            MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-    /\ UNCHANGED <<view, log, primary, byzCommitIndex, byzActions>>
+    \* if view is not already stable, check if it is now
+    /\ viewStable' = [viewStable EXCEPT ![p] = 
+            IF @ THEN @ ELSE CheckViewStability(p)]
+    \* If view is stable, then the primary can update its commit indexes
+    /\ IF viewStable'[p] THEN 
+            /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
+                MaxQuorum(CQ, log[p], prepareQC'[p], @)]
+            /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
+                HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
+        ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
+    /\ UNCHANGED <<view, log, primary, byzActions>>
 
 MaxCrashQC(l,p) ==
     IF crashCommitIndex[p] > HighestCrashQC(l)
@@ -318,13 +334,16 @@ MaxByzQC(l, m) ==
 SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
+    \* and view must be stable
+    /\ viewStable[p]
     /\ \E tx \in Txs:
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
         /\ log' = [log EXCEPT ![p] = Append(@, [
-            view |-> view[p], 
-            tx |-> tx,
+            view |-> view[p],
+            \* for simplicity, each txn batch includes a single txn
+            tx |-> <<tx>>,
             crashQC |-> MaxCrashQC(log[p], p),
             byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
         /\ network' = 
@@ -333,7 +352,7 @@ SendEntries(p) ==
                     type |-> "AppendEntries",
                     view |-> view[p],
                     log |-> log'[p]])]]
-        /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions>>
+        /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
 
 \* Replica r times out
 \* Compare: src/consensus/view_change.rs#do_init_view_change
@@ -347,6 +366,7 @@ Timeout(r) ==
         ]
     \* step down if replica was a primary
     /\ primary' = [primary EXCEPT ![r] = FALSE]
+    /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, these are not used until the node is elected primary
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
@@ -390,7 +410,13 @@ BecomePrimary(r) ==
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
             \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
             /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
-            /\ log' = [log EXCEPT ![r] = l1]
+            \* Primary adopts chosen log and adds a new entry in the new view
+            /\ log' = [log EXCEPT ![r] = Append(l1, [
+                view |-> view[r],
+                tx |-> <<>>,
+                crashQC |-> {},
+                byzQC |-> {}])]
+            /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
@@ -407,7 +433,7 @@ BecomePrimary(r) ==
     \* Crash commit index may be decreased if there's been an byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
-    /\ UNCHANGED <<view, prepareQC, byzActions, byzCommitIndex>>
+    /\ UNCHANGED <<view, byzActions, byzCommitIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
@@ -416,7 +442,7 @@ DiscardMessage(r, s) ==
     /\ \/ Head(network[r][s]).view < view[r]
        \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
     /\ network' = [network EXCEPT ![r][s] = Tail(@)]
-    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
 
 ----
 \* Byzantine actions
@@ -445,14 +471,14 @@ ByzOmitEntries(r, p) ==
             log |-> Head(network[r][p]).log
             ])
         ]
-    /\ UNCHANGED <<primary, view, prepareQC, crashCommitIndex, byzCommitIndex, log>>
+    /\ UNCHANGED <<primary, view, prepareQC, crashCommitIndex, byzCommitIndex, log, viewStable>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
 ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
     log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = 1]>>
+        <<[Last(m.log) EXCEPT !.tx = <<1>>]>>
 ]
 
 
@@ -467,7 +493,7 @@ ByzPrimaryEquivocate(p) ==
         /\ Head(network[r][p]).log # <<>>
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, viewStable>>
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
