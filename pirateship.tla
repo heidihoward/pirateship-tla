@@ -188,19 +188,11 @@ HighestQCOverQC(l) ==
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
 
-MaxCrashQuorum(l, m, default) == 
+MaxQuorum(Q, l, m, default) == 
     LET RECURSIVE RMaxQuorum(_)
         RMaxQuorum(i) ==
             IF i = default THEN default
-            ELSE IF \E q \in CQ: \A n \in q: m[n] >= i
-                 THEN i ELSE RMaxQuorum(i-1)
-    IN RMaxQuorum(Len(l))
-
-MaxByzQuorum(l, m, default) == 
-    LET RECURSIVE RMaxQuorum(_)
-        RMaxQuorum(i) ==
-            IF i = default THEN default
-            ELSE IF \E q \in BQ: \A n \in q: m[n] >= i
+            ELSE IF \E q \in Q: \A n \in q: m[n] >= i
                  THEN i ELSE RMaxQuorum(i-1)
     IN RMaxQuorum(Len(l))
 
@@ -321,9 +313,9 @@ ReceiveVote(p, r) ==
     \* If view is stable, then the primary can update its commit indexes
     /\ IF viewStable'[p] THEN 
             /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
-                MaxCrashQuorum(log[p], prepareQC'[p], @)]
+                MaxQuorum(CQ, log[p], prepareQC'[p], @)]
             /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
-                HighestByzQC(SubSeq(log[p],1,MaxByzQuorum(log[p], prepareQC'[p], 0)))]
+                HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
@@ -333,8 +325,8 @@ MaxCrashQC(l,p) ==
     ELSE {}
 
 MaxByzQC(l, m) == 
-    IF MaxByzQuorum(l, m, 0) > HighestByzQC(l)
-    THEN {MaxByzQuorum(l, m, 0)}
+    IF MaxQuorum(BQ, l, m, 0) > HighestByzQC(l)
+    THEN {MaxQuorum(BQ, l, m, 0)}
     ELSE {}
 
 \* Primary p sends AppendEntries to all replicas
