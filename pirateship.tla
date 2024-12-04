@@ -539,6 +539,11 @@ Committed(r) ==
     THEN << >>
     ELSE SubSeq(log[r], 1, crashCommitIndex[r])
 
+ViewMonotonicInv ==
+    \A r \in R :
+        \A i \in 2..Len(log[r]) :
+            log[r][i].view >= log[r][i-1].view
+
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
