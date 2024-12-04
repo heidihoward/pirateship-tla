@@ -1,6 +1,28 @@
 ----- MODULE TLCpirateship -----
 EXTENDS pirateship, TLC
 
+PS == INSTANCE pirateship
+
+TLCInit ==
+    \/ PS!Init
+    \* Cluster is in a steady state.
+    \/ /\ view = [r \in R |-> 0]
+       /\ byzActions = 0
+       /\ network = [r \in R |-> [s \in R |-> <<>>]]
+       /\ byzCommitIndex = [r \in R |-> 2]
+       /\ \E p \in R:
+             /\ primary = [ r \in R |-> r = p ]
+             /\ viewStable = primary \* Identical to primary at startup.
+             /\ log = [r \in R |-> 
+                    <<[view |-> 0, tx |-> <<1>>, byzQC |-> {},  crashQC |-> {}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {},  crashQC |-> {}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {1}, crashQC |-> {1}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {2}, crashQC |-> {2}]>>]
+             /\ prepareQC = [r \in R |-> [s \in R |-> IF r = p THEN Len(log[r]) ELSE 0]]
+             /\ crashCommitIndex = [r \in R |-> Len(log[r])]
+
+-----
+
 \* Add a few monitors/canaries to check if interesting states are reachable.
 
 Monitors == INSTANCE TLCMonitor WITH TLCMonitorMagicNumber <- 0

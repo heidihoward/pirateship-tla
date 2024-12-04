@@ -1,8 +1,6 @@
 ----- MODULE SIMpirateship -----
 EXTENDS TLCpirateship, TLC
 
-PS == INSTANCE pirateship
-
 SIMTimeout(r) ==
     /\ \/ 1 = RandomElement(1..10)
        \* There is no primary in the highest view.
