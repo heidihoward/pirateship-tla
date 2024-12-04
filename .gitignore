@@ -10,6 +10,7 @@ states/
 *_TTrace_*.bin
 *_TTrace_*.out
 *_TTrace_*.tla
+*.out
 
 ## Scratch files if any.
 .scratch/
