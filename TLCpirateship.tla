@@ -35,4 +35,14 @@ MonitorPostcondition ==
 PrintMonitors ==
     Monitors!TLCPrintMonitors
 
+-----
+
+DebugCrashCommitIndex ==
+    \* For all replicas, crashCommitIndex is always less than two.
+    \E i \in Range(crashCommitIndex): i < 2
+
+DebugByzCommitIndex ==
+    \* For all replicas, byzCommitIndex is always less than two.
+    \E i \in Range(byzCommitIndex): i < 2
+
 =====
