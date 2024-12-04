@@ -17,6 +17,7 @@ LOCAL TLCModify(key, Op(_,_), val, defaultVal) ==
     TLCSet(key, Op(TLCGetOrDefault(key, defaultVal), val))
 
 TLCMonitor(expr, name) ==
+    (* Count, under the specified name, the number of occurrences where the given expression is true. *)
     TLCModify(TLCMonitorMagicNumber, LAMBDA old, b: 
         IF b
         THEN
@@ -24,6 +25,17 @@ TLCMonitor(expr, name) ==
             THEN [old EXCEPT ![name] = @ + 1]
             ELSE old @@ (name :> 1)
         ELSE old @@ (name :> 0), expr, <<>>)
+
+TLCMonitorMin(expr, name, val) ==
+    (* Store the running minimum value under the specified name, the given expression is true, *)
+    (* but only update it if the current value is smaller than the previously stored value.    *)
+    TLCModify(TLCMonitorMagicNumber, LAMBDA old, b: 
+        IF b
+        THEN
+            IF name \in DOMAIN old
+            THEN [old EXCEPT ![name] = IF @ < val THEN @ ELSE val]
+            ELSE old @@ (name :> val)
+        ELSE old @@ (name :> 2147483647), expr, <<>>) \* 2^31 - 1 is TLC's max value.
 
 TLCMonitors ==
     \* Merge values of *all* workers.
