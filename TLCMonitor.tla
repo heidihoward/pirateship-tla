@@ -39,7 +39,7 @@ TLCMonitorMin(expr, name, val) ==
 
 TLCMonitors ==
     \* Merge values of *all* workers.
-    FoldSeq(LAMBDA f, g : [ k \in DOMAIN f |-> f[k] + IF k \in DOMAIN g THEN g[k] ELSE 0 ], 
+    FoldSeq(LAMBDA f, g : [ k \in DOMAIN f |-> IF f[k] = 2147483647 THEN 0 ELSE f[k] + IF k \in DOMAIN g THEN g[k] ELSE 0 ], 
                 <<>>, TLCGet("all")[TLCMonitorMagicNumber])
 
 TLCCheckMonitors ==
