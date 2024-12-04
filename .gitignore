@@ -1,7 +1,15 @@
-states/
+## VSCode editor files.
 .vscode/
+
+## Apalache temp files.
 _apalache-out/
+
+## TLC and Toolbox temp files.
+states/
 *.toolbox/
 *_TTrace_*.bin
 *_TTrace_*.out
 *_TTrace_*.tla
+
+## Scratch files if any.
+.scratch/
