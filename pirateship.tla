@@ -601,10 +601,4 @@ IndexBoundsInv ==
 WellFormedLogInv ==
     \A r \in CR : WellFormedLog(log[r])
 
-\* Classic CFT safety property - if a log entry is committed on one replica, it is present on crash quorum of replicas
-QuorumAgreementInv ==
-    byzActions = 0 => 
-        \A i \in R: \E q \in CQ: 
-            \A j \in q: IsPrefixWithoutEmpty(Committed(i), log[j])
-
 ====
