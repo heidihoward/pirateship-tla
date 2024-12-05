@@ -148,7 +148,7 @@ TypeOK ==
 ----
 \* Initial states
 
-\* We begin in view 0 with replica 1 as primary
+\* We begin in view 0 with a non-deterministically chosen replica as primary.
 Init == 
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
