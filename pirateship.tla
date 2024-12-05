@@ -544,6 +544,14 @@ ViewMonotonicInv ==
         \A i \in 2..Len(log[r]) :
             log[r][i].view >= log[r][i-1].view
 
+ViewStabilizationInv ==
+    \* A view stabilization log entry has no predecessor log entry with the same view.
+    \* In other words, a view stabilization log entry is only allowed as the first log
+    \* entry in a view.
+    \A r \in R :
+        \A i \in 1..Len(log[r]) :
+            log[r][i].tx = <<>> => \A j \in 1..(i-1) : log[r][j].view < log[r][i].view
+
 IsPrefixWithoutEmpty(p, l) ==
     /\ Len(p) <= Len(l)
     /\ \A k \in 1..Len(p):
