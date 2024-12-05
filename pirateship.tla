@@ -535,9 +535,7 @@ Spec ==
 CR == IF byzActions = 0 THEN R ELSE HR
 
 Committed(r) ==
-    IF crashCommitIndex[r] = 0
-    THEN << >>
-    ELSE SubSeq(log[r], 1, crashCommitIndex[r])
+    SubSeq(log[r], 1, crashCommitIndex[r])
 
 ViewMonotonicInv ==
     \A r \in R :
@@ -570,9 +568,7 @@ LogInv ==
             \/ IsPrefixWithoutEmpty(Committed(j),Committed(i))
 
 ByzCommitted(r) ==
-    IF byzCommitIndex[r] = 0
-    THEN << >>
-    ELSE SubSeq(log[r], 1, byzCommitIndex[r])
+    SubSeq(log[r], 1, byzCommitIndex[r])
 
 \* Variant of LogInv for the byzantine commit index and correct replicas only
 \* We make no assertions about the state of byzantine replicas
