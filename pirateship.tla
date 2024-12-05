@@ -550,8 +550,15 @@ ViewStabilizationInv ==
             /\ log[r][i].tx = <<>> => log[r][i].view # 0
             /\ i > 1 /\ log[r][i].view > log[r][i-1].view => log[r][i].tx = <<>>
 
-
+\* Ignoring view stabilization log entries (modeled as empty txs), true iff the log p is a prefix of log l.
 IsPrefixWithoutEmpty(p, l) ==
+    \* p can be longer than l. Suppose l matches p as a prefix up to index i, but the suffix of p starting
+    \* at i+1 contains only view stabilization log entries. By adding the condition Len(p) <= Len(l), we
+    \* ensure that such cases are not considered as p being a prefix of l. Instead, we require that l is at
+    \* least as long as p, ensuring that l has a suffix distinct from p.
+    \* Independently, this condition prevents out-of-bounds access when p is longer than l. For example, if
+    \* l = <<>> (an empty sequence), attempting to access l[k] in the disjunct p[k] = l[k] would lead to an
+    \* out-of-bounds access.
     /\ Len(p) <= Len(l)
     /\ \A k \in 1..Len(p):
           \/ p[k] = l[k]
@@ -581,10 +588,8 @@ ByzLogInv ==
 \* Note that is invariant allows empty blocks (sent at the start of a view) to be rolled back
 CommittedLogAppendOnlyProp ==
     [][byzActions = 0 => 
-        \A i \in R : crashCommitIndex[i] > 0 =>
-            \A k \in 1..crashCommitIndex[i]: 
-                \/ log[i][k] = log'[i][k]
-                \/ log[i][k].tx = <<>>]_vars
+        \A i \in R :
+        IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
 \* Each correct replica only appends to its byzantine committed log
 ByzCommittedLogAppendOnlyProp ==
