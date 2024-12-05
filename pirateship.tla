@@ -544,6 +544,12 @@ ViewMonotonicInv ==
         \A i \in 2..Len(log[r]) :
             log[r][i].view >= log[r][i-1].view
 
+IsPrefixWithoutEmpty(p, l) ==
+    /\ Len(p) <= Len(l)
+    /\ \A k \in 1..Len(p):
+          \/ p[k] = l[k]
+          \/ p[k].tx = <<>>
+
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
@@ -551,8 +557,8 @@ ViewMonotonicInv ==
 LogInv ==
     byzActions = 0 =>
         \A i, j \in R :
-            \/ IsPrefix(Committed(i),Committed(j)) 
-            \/ IsPrefix(Committed(j),Committed(i))
+            \/ IsPrefixWithoutEmpty(Committed(i),Committed(j)) 
+            \/ IsPrefixWithoutEmpty(Committed(j),Committed(i))
 
 ByzCommitted(r) ==
     IF byzCommitIndex[r] = 0
