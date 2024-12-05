@@ -605,6 +605,6 @@ WellFormedLogInv ==
 QuorumAgreementInv ==
     byzActions = 0 => 
         \A i \in R: \E q \in CQ: 
-            \A j \in q: IsPrefix(Committed(i), log[j])
+            \A j \in q: IsPrefixWithoutEmpty(Committed(i), log[j])
 
 ====
