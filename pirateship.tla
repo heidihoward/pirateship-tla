@@ -544,9 +544,9 @@ ViewMonotonicInv ==
         \A i \in 2..Len(log[r]) :
             log[r][i].view >= log[r][i-1].view
 
+\* Every view starts with a view stabilization log entry. Moreover, view 0 is always stable.
+\* Therefore, view 0 has no view stabilization log entry.
 ViewStabilizationInv ==
-    \* Every view starts with a view stabilization log entry. Moreover, view 0 is always stable.
-    \* Therefore, view 0 has no view stabilization log entry.
     \A r \in R :
         /\ \A i \in 1..Len(log[r]) :
             /\ log[r][i].tx = <<>> => log[r][i].view # 0
