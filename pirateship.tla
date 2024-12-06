@@ -150,6 +150,7 @@ TypeOK ==
 
 \* We begin in view 0 with a non-deterministically chosen replica as primary.
 Init == 
+    \* Compare src/consensus/handler.rs#ConsensusState
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
