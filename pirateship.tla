@@ -135,6 +135,7 @@ Messages ==
     NewViews
 
 TypeOK == 
+    /\ viewStable \in [R -> BOOLEAN]
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
     /\ \A r, s \in R:
