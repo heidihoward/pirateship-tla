@@ -588,7 +588,7 @@ ByzLogInv ==
         \/ IsPrefix(ByzCommitted(j),ByzCommitted(i))
 
 \* If no byzantine actions have been taken, then each replica only appends to its committed log
-\* Note that is invariant allows empty blocks (sent at the start of a view) to be rolled back
+\* Note that this invariant allows empty blocks (sent at the start of a view) to be rolled back
 CommittedLogAppendOnlyProp ==
     [][byzActions = 0 => 
         \A i \in R :
