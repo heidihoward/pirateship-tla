@@ -220,6 +220,7 @@ WellFormedLog(l) ==
                 \A qj \in l[j].crashQC: qj < q
 
 \* Replica r handling AppendEntries from primary p
+\* Compare: src/consensus/steady_state.rs#do_append_entries
 ReceiveEntries(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
@@ -295,6 +296,7 @@ CheckViewStability(p) ==
             prepareQC'[p][q] >= SelectInSeq(log[p], inView)
 
 \* Primary p receiving votes from replica r
+\* Compare: src/consensus/steady_state.rs#do_process_vote
 ReceiveVote(p, r) ==
     \* p must be the primary
     /\ primary[p]
@@ -379,6 +381,7 @@ HighestQCView(l) ==
 
 \* True if log l is valid log choice from the set of logs ls.
 \* Assumes that l \in ls
+\* Compare: src/consensus/view_change.rs#fork_choice_rule_get
 LogChoiceRule(l,ls) ==
     \* if all logs are empty, then any l must be empty and a valid choice  
     \/ \A l2 \in ls: l2 = <<>>
