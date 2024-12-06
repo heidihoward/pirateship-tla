@@ -537,6 +537,8 @@ CR == IF byzActions = 0 THEN R ELSE HR
 Committed(r) ==
     SubSeq(log[r], 1, crashCommitIndex[r])
 
+\* The view of a log entry is always greater than or equal to the view of the previous entry, i.e.,
+\* the view of log entries is (non-strictly) monotonically increasing.
 ViewMonotonicInv ==
     \A r \in R :
         \A i \in 2..Len(log[r]) :
@@ -601,7 +603,6 @@ OneLeaderPerTermInv ==
     \A v \in 0..Max(Range(view)), r \in CR :
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
-
 
 IndexBoundsInv ==
     \A r \in CR :
