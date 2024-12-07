@@ -177,11 +177,13 @@ HighestCrashQC(l) ==
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].crashQC)
 
 \* Given a log l, returns the index of the highest log entry with a byzQC, 0 if the log contains no byzQCs
+\* Compare: src/consensus/log.rs#Log
 HighestByzQC(l) ==
     LET idx == SelectLastInSeq(l, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 \* Given a log l, returns the index of the highest log entry with a byzQC over a byzQC
+\* Compare: src/consensus/log.rs#Log
 HighestQCOverQC(l) ==
     LET lidx == HighestByzQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
@@ -318,6 +320,7 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
+            \* Compare: ssrc/consensus/commit.rs#maybe_byzantine_commit
             /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
                 HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
