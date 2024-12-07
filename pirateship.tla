@@ -598,6 +598,10 @@ CommittedLogAppendOnlyProp ==
         \A i \in R :
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
+MonotonicByzCommittedIndexdProp ==
+    [][\A i \in CR :
+        byzCommitIndex[i] <= byzCommitIndex'[i]]_vars
+
 \* Each correct replica only appends to its byzantine committed log
 ByzCommittedLogAppendOnlyProp ==
     [][\A i \in CR :
