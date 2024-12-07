@@ -14,10 +14,10 @@ TLCInit ==
              /\ primary = [ r \in R |-> r = p ]
              /\ viewStable = primary \* Identical to primary at startup.
              /\ log = [r \in R |-> 
-                    <<[view |-> 0, tx |-> <<1>>, byzQC |-> {},  crashQC |-> {}],
-                      [view |-> 0, tx |-> <<1>>, byzQC |-> {},  crashQC |-> {}],
-                      [view |-> 0, tx |-> <<1>>, byzQC |-> {1}, crashQC |-> {1}],
-                      [view |-> 0, tx |-> <<1>>, byzQC |-> {2}, crashQC |-> {2}]>>]
+                    <<[view |-> 0, tx |-> <<1>>, byzQC |-> {},  byzQCVotes |-> {},  crashQC |-> {}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {},  byzQCVotes |-> {},  crashQC |-> {}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {1}, byzQCVotes |-> R,  crashQC |-> {1}],
+                      [view |-> 0, tx |-> <<1>>, byzQC |-> {2}, byzQCVotes |-> R,  crashQC |-> {2}]>>]
              /\ prepareQC = [r \in R |-> [s \in R |-> IF r = p THEN Len(log[r]) ELSE 0]]
              /\ crashCommitIndex = [r \in R |-> Len(log[r])]
 

@@ -98,6 +98,7 @@ LogEntry == [
     tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
+    byzQCVotes: BQ \cup {{}}, \* empty set iff byzQC is empty.
     crashQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
@@ -138,6 +139,8 @@ TypeOK ==
     /\ viewStable \in [R -> BOOLEAN]
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
+    /\ \A l \in Range(log):
+        \A i \in DOMAIN l: l[i].byzQC = {} => l[i].byzQCVotes = {}
     /\ \A r, s \in R:
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
@@ -332,9 +335,10 @@ MaxCrashQC(l,p) ==
     ELSE {}
 
 MaxByzQC(l, m) == 
-    IF MaxQuorum(BQ, l, m, 0) > HighestByzQC(l)
-    THEN {MaxQuorum(BQ, l, m, 0)}
-    ELSE {}
+    LET idx == MaxQuorum(BQ, l, m, 0) IN
+    IF idx > HighestByzQC(l)
+    THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
+    ELSE [n |-> {}, v |-> {}]
 
 \* Primary p sends AppendEntries to all replicas
 \* Compare: src/consensus/steady_state.rs#do_append_entries
@@ -347,12 +351,14 @@ SendEntries(p) ==
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
-        /\ log' = [log EXCEPT ![p] = Append(@, [
+        /\ LET qc == MaxByzQC(log[p], prepareQC'[p]) IN
+           log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p],
             \* for simplicity, each txn batch includes a single txn
             tx |-> <<tx>>,
             crashQC |-> MaxCrashQC(log[p], p),
-            byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
+            byzQC |-> qc.n,
+            byzQCVotes |-> qc.v])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -423,7 +429,8 @@ BecomePrimary(r) ==
                 view |-> view[r],
                 tx |-> <<>>,
                 crashQC |-> {},
-                byzQC |-> {}])]
+                byzQC |-> {},
+                byzQCVotes |-> {}])]
             /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
