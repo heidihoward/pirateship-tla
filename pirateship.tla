@@ -192,6 +192,10 @@ HighestQCOverQC(l) ==
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
+HighestUnanimity(l, v) ==
+    LET idx == SelectLastInSeq(l, LAMBDA e: e.byzQCVotes = R /\ e.view = v)
+    IN IF idx = 0 THEN {0} ELSE l[idx].byzQC
+
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
 
@@ -255,7 +259,11 @@ ReceiveEntries(r, p) ==
     \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
-    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
+    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+    /\ LET bci == HighestQCOverQC(log'[r])
+           \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+           bciFastPath == HighestUnanimity(log[p], view[p])
+       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
@@ -323,9 +331,11 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            \* Compare: ssrc/consensus/commit.rs#maybe_byzantine_commit
-            /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
-                HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
+            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+            /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
+                   \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+                   bciFastPath == HighestUnanimity(log[p], view[p])
+               IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
