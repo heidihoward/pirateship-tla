@@ -192,8 +192,8 @@ HighestQCOverQC(l) ==
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
-HighestUnanimity(l, v) ==
-    LET idx == SelectLastInSeq(l, LAMBDA e: e.byzQCVotes = R /\ e.view = v)
+HighestUnanimity(l) ==
+    LET idx == SelectLastInSeq(l, LAMBDA e: e.byzQCVotes = R)
     IN IF idx = 0 THEN {0} ELSE l[idx].byzQC
 
 Max2(a,b) == IF a > b THEN a ELSE b
@@ -262,7 +262,7 @@ ReceiveEntries(r, p) ==
     \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
-           bciFastPath == HighestUnanimity(log[p], view[p])
+           bciFastPath == HighestUnanimity(log[p])
        IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
@@ -334,7 +334,7 @@ ReceiveVote(p, r) ==
             \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
             /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
                    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
-                   bciFastPath == HighestUnanimity(log[p], view[p])
+                   bciFastPath == HighestUnanimity(log[p])
                IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
