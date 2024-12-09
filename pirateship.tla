@@ -193,8 +193,13 @@ HighestQCOverQC(l) ==
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
 HighestUnanimity(l) ==
-    LET idx == SelectLastInSeq(l, LAMBDA e: e.byzQCVotes = R)
-    IN IF idx = 0 THEN {0} ELSE l[idx].byzQC
+    LET RECURSIVE RUnanimity(_,_)
+        RUnanimity(i, S) ==
+            IF i = 0 THEN {0}
+            ELSE IF S \cup l[i].byzQCVotes = R 
+                 THEN l[i].byzQC
+                 ELSE RUnanimity(i-1, S \cup l[i].byzQCVotes)
+    IN RUnanimity(Len(l), {})
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
