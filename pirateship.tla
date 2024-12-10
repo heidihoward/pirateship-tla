@@ -98,6 +98,7 @@ LogEntry == [
     tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
+    byzQCVotes: BQ \cup {{}}, \* empty set iff byzQC is empty.
     crashQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
@@ -138,6 +139,8 @@ TypeOK ==
     /\ viewStable \in [R -> BOOLEAN]
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
+    /\ \A l \in Range(log):
+        \A i \in DOMAIN l: l[i].byzQC = {} => l[i].byzQCVotes = {}
     /\ \A r, s \in R:
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
@@ -188,6 +191,16 @@ HighestQCOverQC(l) ==
     LET lidx == HighestByzQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
+
+HighestUnanimity(l, idx, r) ==
+    LET V(S, i) == S \cup l[i].byzQCVotes \cup IF i <= idx THEN {r} ELSE {}
+        RECURSIVE RUnanimity(_,_)
+        RUnanimity(i, S) ==
+            IF i = 0 THEN {0}
+            ELSE IF V(S, i) = R 
+                 THEN l[i].byzQC
+                 ELSE RUnanimity(i-1, V(S, i))
+    IN RUnanimity(Len(l), {})
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
@@ -252,7 +265,11 @@ ReceiveEntries(r, p) ==
     \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
-    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
+    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+    /\ LET bci == HighestQCOverQC(log'[r])
+           \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+           bciFastPath == HighestUnanimity(log'[r], 0, r)
+       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
@@ -320,9 +337,11 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            \* Compare: ssrc/consensus/commit.rs#maybe_byzantine_commit
-            /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
-                HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
+            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+            /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
+                   \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+                   bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
+               IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
@@ -332,9 +351,10 @@ MaxCrashQC(l,p) ==
     ELSE {}
 
 MaxByzQC(l, m) == 
-    IF MaxQuorum(BQ, l, m, 0) > HighestByzQC(l)
-    THEN {MaxQuorum(BQ, l, m, 0)}
-    ELSE {}
+    LET idx == MaxQuorum(BQ, l, m, 0) IN
+    IF idx > HighestByzQC(l)
+    THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
+    ELSE [n |-> {}, v |-> {}]
 
 \* Primary p sends AppendEntries to all replicas
 \* Compare: src/consensus/steady_state.rs#do_append_entries
@@ -347,12 +367,14 @@ SendEntries(p) ==
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
-        /\ log' = [log EXCEPT ![p] = Append(@, [
+        /\ LET qc == MaxByzQC(log[p], prepareQC'[p]) IN
+           log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p],
             \* for simplicity, each txn batch includes a single txn
             tx |-> <<tx>>,
             crashQC |-> MaxCrashQC(log[p], p),
-            byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
+            byzQC |-> qc.n,
+            byzQCVotes |-> qc.v])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -423,7 +445,8 @@ BecomePrimary(r) ==
                 view |-> view[r],
                 tx |-> <<>>,
                 crashQC |-> {},
-                byzQC |-> {}])]
+                byzQC |-> {},
+                byzQCVotes |-> {}])]
             /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
