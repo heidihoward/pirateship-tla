@@ -267,7 +267,7 @@ ReceiveEntries(r, p) ==
     \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
-           bciFastPath == HighestUnanimity(log'[p])
+           bciFastPath == HighestUnanimity(log'[r])
        IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
