@@ -445,11 +445,11 @@ BecomePrimary(r) ==
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
-DiscardMessage(r, s) ==
-    /\ network[r][s] # <<>>
-    /\ \/ Head(network[r][s]).view < view[r]
-       \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
-    /\ network' = [network EXCEPT ![r][s] = Tail(@)]
+DiscardMessages ==
+    /\ \E s,r \in R:
+        network' = 
+            [network EXCEPT ![r][s] = 
+                SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.type = "ViewChange" /\ primary[r])))]
     /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
 
 ----
@@ -506,6 +506,7 @@ ByzPrimaryEquivocate(p) ==
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
+    \/ DiscardMessages
     \/ \E r \in BR:
         \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: \* TODO CR because we don't need byz replicas to receive messages from other byz replicas?!
@@ -518,13 +519,12 @@ Next ==
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
             \/ ReceiveNewView(r,s)
-            \/ DiscardMessage(r,s)
 
 Fairness ==
     \* Only Timeout if there is no primary.
+    /\ WF_vars(DiscardMessages)
     /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
     /\ \A r \in HR: WF_vars(BecomePrimary(r))
-    /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
