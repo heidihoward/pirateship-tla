@@ -140,7 +140,7 @@ TypeOK ==
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
     /\ \A l \in Range(log):
-        \A i \in DOMAIN l: l[i].byzQC = {} => l[i].byzQCVotes = {}
+        \A i \in DOMAIN l: l[i].byzQC = {} <=> l[i].byzQCVotes = {}
     /\ \A r, s \in R:
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
