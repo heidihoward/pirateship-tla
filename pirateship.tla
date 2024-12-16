@@ -192,8 +192,19 @@ HighestQCOverQC(l) ==
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
 
+\* Given a log l, this operator returns the highest index of a log entry for which a *Quorum Certificate* (QC)
+\* exists. Note, the index of the log entry with the QC corresponds to a higher log index than the returned
+\* index. This QC is formed by unanimous **byzQCVotes** from replicas.
+\* Since a vote by a replica r for some index n implicitly serves as a vote for all log entries at index b and
+\* below, the returned highest index might not have directly received a unanimous vote.  Instead, replicas may
+\* have voted for this index transitively by voting for higher indices.
+\* The pair (idx, r) is a vote by replica r for log index idx. While this vote may not yet be recorded in the
+\* log, this operator is robust against it.
 HighestUnanimity(l, idx, r) ==
-    LET V(S, i) == S \cup l[i].byzQCVotes \cup IF i <= idx THEN {r} ELSE {}
+    \* Traverse the log *backwards* and record the replicas that have voted for the current idx or higher 
+    \* indices (see V).
+    LET \* Include r's vote in V of 1..i if r voted for index i.
+        V(S, i) == S \cup l[i].byzQCVotes \cup IF i <= idx THEN {r} ELSE {}
         RECURSIVE RUnanimity(_,_)
         RUnanimity(i, S) ==
             IF i = 0 THEN {0}
