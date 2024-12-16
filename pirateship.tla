@@ -447,9 +447,7 @@ BecomePrimary(r) ==
 \* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
 DiscardMessages ==
     /\ \E s,r \in R:
-        network' = 
-            [network EXCEPT ![r][s] = 
-                SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.type = "ViewChange" /\ primary[r])))]
+            network' = [network EXCEPT ![r][s] = SelectSeq(@, LAMBDA m: m.view >= view[r])]
     /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
 
 ----
