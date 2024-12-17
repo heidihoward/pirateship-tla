@@ -280,7 +280,7 @@ ReceiveEntries(r, p) ==
     /\ LET bci == HighestQCOverQC(log'[r])
            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
            bciFastPath == HighestUnanimity(log'[r], 0, r)
-       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup {bci} \cup bciFastPath) ]
+       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
