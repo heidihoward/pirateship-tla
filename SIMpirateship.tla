@@ -1,5 +1,5 @@
 ----- MODULE SIMpirateship -----
-EXTENDS TLCpirateship, TLC, TLCExt, CSV, IOUtils
+EXTENDS TLCpirateship, TLC, TLCExt, IOUtils
 
 SIMTimeout(r) ==
     /\ \/ 1 = RandomElement(1..((TLCGet("duration") % 300)+1)) \* Adjust probability of timeouts as a function of the duration of the simulation.
@@ -36,28 +36,23 @@ StatsHighestUnanimity(l, i, r) ==
     \* Transitive fast path, i.e., combined votes from all applicable QCs.
     ELSE HighestUnanimity(l, i, r)
 
-StatsConstraint ==
-    \* Average the number of uncommitted (byzantine) transactions accross all replicas. 
-    LET Sum == FoldFunction(+, 0, [ r \in R |-> Len(log[r]) - byzCommitIndex[r] ])
-    \* When done with the current behavior...
-    IN (TLCGet("level") = TLCGet("config").depth) => 
-            TLCGetAndSet(StatsFastPath, 
-                        LAMBDA old, val:
-                            \* Update the average (sum/observations) of uncommitted transactions.
-                            [ sum |-> old.sum + val, obs |-> old.obs + 1 ], 
-                        Sum, [sum |-> 0, obs |-> 0])
-                            \in [sum : Nat, obs : Nat] \* Always evaluate/equal to TRUE.
+StatsCollect(r, bci) ==
+    TLCGetAndSet(StatsFastPath, 
+            LAMBDA old, val: [ sum |-> old.sum + val, obs |-> old.obs + 1 ], 
+            byzCommitIndex'[r] - Max2(byzCommitIndex[r], bci), 
+            [sum |-> 0, obs |-> 0]
+    ) \in [sum : Nat, obs : Nat] \* Always evaluate/equal to TRUE.
+
+StatsReceiveVote(p, r) ==
+    /\ ReceiveVote(p, r)
+    /\ StatsCollect(p, HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0))))
+
+StatsReceiveEntries(r, p) ==
+    /\ ReceiveEntries(r, p)
+    /\ StatsCollect(r, HighestQCOverQC(log'[r]))
 
 StatsPostcondition ==
-    \* Merge the average of each fastPath value accross all TLC workers.
-    /\ LET CSVFile == "StatsSIMpirateship.csv"
-           v ==[ key \in DOMAIN TLCGet("all") |-> 
-            FoldFunction(
-                    LAMBDA val, acc: [sum|->acc.sum+val.sum, obs|->acc.obs+val.obs], 
-                    [sum |-> 0, obs |-> 0], TLCGet("all")[key]) ] IN
-        /\ PrintT([ key \in DOMAIN v |-> <<key, v[key].sum \div v[key].obs>>])
-        /\ CSVRecords(CSVFile) = 0 => CSVWrite("fastPath#sum#observations", <<>>, CSVFile)
-        /\ \A key \in DOMAIN v:
-                CSVWrite("%1$s#%2$s#%3$s", <<key, v[key].sum, v[key].obs>>, CSVFile)
+    /\ PrintT(<<"FastPath", TLCGet(2)>>)
+    /\ PrintT(<<"FastPath (transitive)", TLCGet(3)>>)
 
 ====
