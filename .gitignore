@@ -11,6 +11,7 @@ states/
 *_TTrace_*.out
 *_TTrace_*.tla
 *.out
+*.ndjson
 
 ## Scratch files if any.
 .scratch/

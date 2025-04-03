@@ -101,6 +101,7 @@ LogEntry == [
     tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
     byzQC: SUBSET QC,
+    byzQCVotes: BQ \cup {{}}, \* empty set iff byzQC is empty.
     crashQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
@@ -143,6 +144,8 @@ TypeOK ==
     /\ viewStable \in [R -> BOOLEAN]
     /\ view \in [R -> Views]
     /\ log \in [R -> Log]
+    /\ \A l \in Range(log):
+        \A i \in DOMAIN l: l[i].byzQC = {} <=> l[i].byzQCVotes = {}
     /\ \A r, s \in R:
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
@@ -193,6 +196,27 @@ HighestQCOverQC(l) ==
     LET lidx == HighestByzQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
+
+\* Given a log l, this operator returns the highest index of a log entry for which a *Quorum Certificate* (QC)
+\* exists. Note, the index of the log entry with the QC corresponds to a higher log index than the returned
+\* index. This QC is formed by unanimous **byzQCVotes** from replicas.
+\* Since a vote by a replica r for some index n implicitly serves as a vote for all log entries at index b and
+\* below, the returned highest index might not have directly received a unanimous vote.  Instead, replicas may
+\* have voted for this index transitively by voting for higher indices.
+\* The pair (idx, r) is a vote by replica r for log index idx. While this vote may not yet be recorded in the
+\* log, this operator is robust against it.
+HighestUnanimity(l, idx, r) ==
+    \* Traverse the log *backwards* and record the replicas that have voted for the current idx or higher 
+    \* indices (see V).
+    LET \* Include r's vote in V of 1..i if r voted for index i.
+        V(S, i) == S \cup l[i].byzQCVotes \cup IF i <= idx THEN {r} ELSE {}
+        RECURSIVE RUnanimity(_,_)
+        RUnanimity(i, S) ==
+            IF i = 0 THEN {0}
+            ELSE IF V(S, i) = R 
+                 THEN l[i].byzQC
+                 ELSE RUnanimity(i-1, V(S, i))
+    IN RUnanimity(Len(l), {})
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
@@ -257,7 +281,11 @@ ReceiveEntries(r, p) ==
     \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
     \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
-    /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max2(@, HighestQCOverQC(log'[r]))]
+    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+    /\ LET bci == HighestQCOverQC(log'[r])
+           \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+           bciFastPath == HighestUnanimity(log'[r], 0, r)
+       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
@@ -325,9 +353,11 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            \* Compare: ssrc/consensus/commit.rs#maybe_byzantine_commit
-            /\ byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = 
-                HighestByzQC(SubSeq(log[p],1,MaxQuorum(BQ, log[p], prepareQC'[p], 0)))]
+            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
+            /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
+                   \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
+                   bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
+               IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
@@ -337,9 +367,10 @@ MaxCrashQC(l,p) ==
     ELSE {}
 
 MaxByzQC(l, m) == 
-    IF MaxQuorum(BQ, l, m, 0) > HighestByzQC(l)
-    THEN {MaxQuorum(BQ, l, m, 0)}
-    ELSE {}
+    LET idx == MaxQuorum(BQ, l, m, 0) IN
+    IF idx > HighestByzQC(l)
+    THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
+    ELSE [n |-> {}, v |-> {}]
 
 \* Primary p sends AppendEntries to all replicas
 \* Compare: src/consensus/steady_state.rs#do_append_entries
@@ -352,12 +383,14 @@ SendEntries(p) ==
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
-        /\ log' = [log EXCEPT ![p] = Append(@, [
+        /\ LET qc == MaxByzQC(log[p], prepareQC'[p]) IN
+           log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p],
             \* for simplicity, each txn batch includes a single txn
             tx |-> <<tx>>,
             crashQC |-> MaxCrashQC(log[p], p),
-            byzQC |-> MaxByzQC(log[p], prepareQC'[p])])]
+            byzQC |-> qc.n,
+            byzQCVotes |-> qc.v])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -428,7 +461,8 @@ BecomePrimary(r) ==
                 view |-> view[r],
                 tx |-> <<>>,
                 crashQC |-> {},
-                byzQC |-> {}])]
+                byzQC |-> {},
+                byzQCVotes |-> {}])]
             /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
@@ -451,13 +485,10 @@ BecomePrimary(r) ==
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered
 \* so a replica may need to discard an out-of-date message to process a more recent one
-DiscardMessage(r, s) ==
-    /\ network[r][s] # <<>>
-    /\ \/ Head(network[r][s]).view < view[r]
-       \/ Head(network[r][s]).type = "ViewChange" /\ primary[r]
-    /\ network' = [network EXCEPT ![r][s] = Tail(@)]
-    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, 
-        byzCommitIndex, byzActions, viewStable>>
+DiscardMessages ==
+    /\ \E s,r \in R:
+            network' = [network EXCEPT ![r][s] = SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
+    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
 
 ----
 \* Byzantine actions
@@ -513,6 +544,7 @@ ByzPrimaryEquivocate(p) ==
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
+    \/ DiscardMessages
     \/ \E r \in BR:
         \/ ByzPrimaryEquivocate(r)
         \/ \E s \in R: \* TODO CR because we don't need byz replicas to receive messages from other byz replicas?!
@@ -525,13 +557,12 @@ Next ==
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
             \/ ReceiveNewView(r,s)
-            \/ DiscardMessage(r,s)
 
 Fairness ==
     \* Only Timeout if there is no primary.
+    /\ WF_vars(DiscardMessages)
     /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
     /\ \A r \in HR: WF_vars(BecomePrimary(r))
-    /\ \A r,s \in HR: WF_vars(DiscardMessage(r,s))
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
