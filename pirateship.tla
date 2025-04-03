@@ -89,7 +89,10 @@ Primary(v) ==
 
 \* Quorum certificates (QCs) are simply the index of the log entry they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
-\* Note that in the specification, we do not model signatures anywhere. This means that signatures are omitted from the logs and messages. When modelling byzantine faults, byz replicas will not be permitted to form messages which would be discarded by honest replicas.
+\* Note that in the specification, we do not model signatures anywhere. 
+\* This means that signatures are omitted from the logs and messages. 
+\* When modelling byzantine faults, byz replicas will not be permitted to form 
+\* messages which would be discarded by honest replicas.
 QC == Nat
 
 \* Each log entry contains a view, a txn and optionally, quorum certificates for crash and byzantine faults
@@ -108,7 +111,9 @@ Log == Seq(LogEntry)
 AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
-    \* In practice, it suffices to send only the log entry to append, however, for the sake of the spec, we send the entire log as we need to check that the replica has the parent of the log entry to append
+    \* In practice, it suffices to send only the log entry to append
+    \* However, for the sake of the spec, we send the entire log as we need to check 
+    \* that the replica has the parent of the log entry to append
     log: Log]
 
 Votes == [
@@ -478,7 +483,8 @@ BecomePrimary(r) ==
     /\ UNCHANGED <<view, byzActions, byzCommitIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
-\* Note that replicas must always discard messages as the pairwise channels are ordered so a replica may need to discard an out-of-date message to process a more recent one
+\* Note that replicas must always discard messages as the pairwise channels are ordered
+\* so a replica may need to discard an out-of-date message to process a more recent one
 DiscardMessages ==
     /\ \E s,r \in R:
             network' = [network EXCEPT ![r][s] = SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
@@ -609,7 +615,8 @@ IsPrefixWithoutEmpty(p, l) ==
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
-\* LogInv implies that the byzantine committed logs of replicas are prefixes too, as IndexBoundsInv ensures that the byzCommitIndex is always less than or equal to the crashCommitIndex.
+\* LogInv implies that the byzantine committed logs of replicas are prefixes too, 
+\* as IndexBoundsInv ensures that the byzCommitIndex is always less than or equal to the crashCommitIndex.
 LogInv ==
     byzActions = 0 =>
         \A i, j \in R :
