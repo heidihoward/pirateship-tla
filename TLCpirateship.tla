@@ -19,7 +19,7 @@ TLCInit ==
                       [view |-> 0, tx |-> <<1>>, byzQC |-> {1}, byzQCVotes |-> R,  crashQC |-> {1}],
                       [view |-> 0, tx |-> <<1>>, byzQC |-> {2}, byzQCVotes |-> R,  crashQC |-> {2}]>>]
              /\ prepareQC = [r \in R |-> [s \in R |-> IF r = p THEN Len(log[r]) ELSE 0]]
-             /\ crashCommitIndex = [r \in R |-> Len(log[r])]
+             /\ commitIndex = [r \in R |-> Len(log[r])]
 
 -----
 
@@ -28,16 +28,16 @@ TLCInit ==
 Monitors == INSTANCE TLCMonitor WITH TLCMonitorMagicNumber <- 0
 
 CrashCommitIndexAt1 ==
-   Monitors!TLCMonitor(\A r \in HR: crashCommitIndex[r] = 1, "CrashCommitIndex@1")
+   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 1, "CrashCommitIndex@1")
 
 CrashCommitIndexAt2 ==
-   Monitors!TLCMonitor(\A r \in HR: crashCommitIndex[r] = 2, "CrashCommitIndex@2")
+   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 2, "CrashCommitIndex@2")
 
 CrashCommitIndex1AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: crashCommitIndex[r] = 1, "CrashCommitIndex1AtLevel", TLCGet("level"))
+    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 1, "CrashCommitIndex1AtLevel", TLCGet("level"))
 
 CrashCommitIndex2AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: crashCommitIndex[r] = 2, "CrashCommitIndex2AtLevel", TLCGet("level"))
+    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 2, "CrashCommitIndex2AtLevel", TLCGet("level"))
 
 ByzCommitIndexAt1 ==
    Monitors!TLCMonitor(\A r \in HR: byzCommitIndex[r] = 1, "ByzCommitIndex@1")
@@ -60,8 +60,8 @@ PrintMonitors ==
 -----
 
 DebugCrashCommitIndex ==
-    \* For all replicas, crashCommitIndex is always less than two.
-    \E i \in Range(crashCommitIndex): i < 2
+    \* For all replicas, commitIndex is always less than two.
+    \E i \in Range(commitIndex): i < 2
 
 DebugByzCommitIndex ==
     \* For all replicas, byzCommitIndex is always less than two.
