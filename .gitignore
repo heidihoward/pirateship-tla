@@ -16,7 +16,10 @@ states/
 ## Scratch files if any.
 .scratch/
 
-## Latex
+## TLATeX files.
+*.tex
+*.pdf
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
