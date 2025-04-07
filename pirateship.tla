@@ -44,10 +44,10 @@ VARIABLE
     primary,
     \* (primary only) the highest log entry on each replica replicated in this view
     prepareQC,
-    \* crash commit index of each replica
-    crashCommitIndex,
-    \* byzantine commit index of each replica
-    byzCommitIndex,
+    \* commit index of each replica
+    commitIndex,
+    \* audit index of each replica
+    auditIndex,
     \* total number of byzantine actions taken so far by any byzantine replica
     byzActions,
     \* (primary only) flag indicating if the primary has stabilized the view
@@ -59,8 +59,8 @@ vars == <<
     log, 
     primary, 
     prepareQC,
-    crashCommitIndex,
-    byzCommitIndex,
+    commitIndex,
+    auditIndex,
     byzActions,
     viewStable>>
 
@@ -150,8 +150,8 @@ TypeOK ==
         \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
     /\ primary \in [R -> BOOLEAN]
     /\ prepareQC \in [R -> [R -> Nat]]
-    /\ crashCommitIndex \in [R -> Nat]
-    /\ byzCommitIndex \in [R -> Nat]
+    /\ commitIndex \in [R -> Nat]
+    /\ auditIndex \in [R -> Nat]
     /\ byzActions \in Nat
 
 ----
@@ -165,8 +165,8 @@ Init ==
     /\ log = [r \in R |-> <<>>]
     /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ prepareQC = [r \in R |-> [s \in R |-> 0]]
-    /\ crashCommitIndex = [r \in R |-> 0]
-    /\ byzCommitIndex = [r \in R |-> 0]
+    /\ commitIndex = [r \in R |-> 0]
+    /\ auditIndex = [r \in R |-> 0]
     /\ byzActions = 0
     /\ viewStable = primary
 
@@ -277,15 +277,15 @@ ReceiveEntries(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica updates its crash commit index provided the new commit index is greater than the current one
-    \* the only time a crash commit index can decrease is on the receipt of a NewView message if there's been a byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
-    \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
+    \* replica updates its commit index provided the new commit index is greater than the current one
+    \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
+    /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
+    \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
     \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
            bciFastPath == HighestUnanimity(log'[r], 0, r)
-       IN byzCommitIndex' = [byzCommitIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
+       IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from primary p
@@ -318,10 +318,10 @@ ReceiveNewView(r, p) ==
             log |-> log'[r]
             ])
         ]
-    \* replica must update its crash commit index
-    \* Crash commit index may be decreased if there's been an byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
-    /\ UNCHANGED <<byzActions, byzCommitIndex>>
+    \* replica must update its commit index
+    \* Commit index may be decreased if there's been an byz attack
+    /\ commitIndex' = [commitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
+    /\ UNCHANGED <<byzActions, auditIndex>>
 
 \* True iff primary p is in a stable view
 \* A view is stable when a byzantine quorum have the view's first log entry
@@ -351,19 +351,19 @@ ReceiveVote(p, r) ==
             IF @ THEN @ ELSE CheckViewStability(p)]
     \* If view is stable, then the primary can update its commit indexes
     /\ IF viewStable'[p] THEN 
-            /\ crashCommitIndex' = [crashCommitIndex EXCEPT ![p] = 
+            /\ commitIndex' = [commitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
             \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
             /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
                    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
                    bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
-               IN byzCommitIndex' = [byzCommitIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
-        ELSE UNCHANGED <<crashCommitIndex, byzCommitIndex>>
+               IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
+        ELSE UNCHANGED <<commitIndex, auditIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
 MaxCrashQC(l,p) ==
-    IF crashCommitIndex[p] > HighestCrashQC(l)
-    THEN {crashCommitIndex[p]}
+    IF commitIndex[p] > HighestCrashQC(l)
+    THEN {commitIndex[p]}
     ELSE {}
 
 MaxByzQC(l, m) == 
@@ -397,7 +397,7 @@ SendEntries(p) ==
                     type |-> "AppendEntries",
                     view |-> view[p],
                     log |-> log'[p]])]]
-        /\ UNCHANGED <<view, primary, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
+        /\ UNCHANGED <<view, primary, commitIndex, auditIndex, byzActions, viewStable>>
 
 \* Replica r times out
 \* Compare: src/consensus/view_change.rs#do_init_view_change
@@ -414,7 +414,7 @@ Timeout(r) ==
     /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, these are not used until the node is elected primary
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
-    /\ UNCHANGED <<log, crashCommitIndex, byzCommitIndex, byzActions>>
+    /\ UNCHANGED <<log, commitIndex, auditIndex, byzActions>>
 
 \* The view of the highest byzQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
@@ -477,10 +477,10 @@ BecomePrimary(r) ==
     \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
     \* primary updates its commit indexes
-    \* Crash commit index may be decreased if there's been an byz attack
-    /\ crashCommitIndex' = [crashCommitIndex EXCEPT 
+    \* Commit index may be decreased if there's been an byz attack
+    /\ commitIndex' = [commitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
-    /\ UNCHANGED <<view, byzActions, byzCommitIndex, viewStable>>
+    /\ UNCHANGED <<view, byzActions, auditIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
 \* Note that replicas must always discard messages as the pairwise channels are ordered
@@ -488,7 +488,7 @@ BecomePrimary(r) ==
 DiscardMessages ==
     /\ \E s,r \in R:
             network' = [network EXCEPT ![r][s] = SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
-    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, byzActions, viewStable>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
 
 ----
 \* Byzantine actions
@@ -517,7 +517,7 @@ ByzOmitEntries(r, p) ==
             log |-> Head(network[r][p]).log
             ])
         ]
-    /\ UNCHANGED <<primary, view, prepareQC, crashCommitIndex, byzCommitIndex, log, viewStable>>
+    /\ UNCHANGED <<primary, view, prepareQC, commitIndex, auditIndex, log, viewStable>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
 ModifyAppendEntries(m) == [
@@ -539,7 +539,7 @@ ByzPrimaryEquivocate(p) ==
         /\ Head(network[r][p]).log # <<>>
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, primary, prepareQC, crashCommitIndex, byzCommitIndex, viewStable>>
+    /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, viewStable>>
 
 \* Next state relation
 \* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
@@ -581,7 +581,7 @@ Spec ==
 CR == IF byzActions = 0 THEN R ELSE HR
 
 Committed(r) ==
-    SubSeq(log[r], 1, crashCommitIndex[r])
+    SubSeq(log[r], 1, commitIndex[r])
 
 \* The view of a log entry is always greater than or equal to the view of the previous entry, i.e.,
 \* the view of log entries is (non-strictly) monotonically increasing.
@@ -615,23 +615,23 @@ IsPrefixWithoutEmpty(p, l) ==
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
-\* LogInv implies that the byzantine committed logs of replicas are prefixes too, 
-\* as IndexBoundsInv ensures that the byzCommitIndex is always less than or equal to the crashCommitIndex.
+\* LogInv implies that the audited logs of replicas are prefixes too, 
+\* as IndexBoundsInv ensures that the auditIndex is always less than or equal to the commitIndex.
 LogInv ==
     byzActions = 0 =>
         \A i, j \in R :
             \/ IsPrefixWithoutEmpty(Committed(i),Committed(j)) 
             \/ IsPrefixWithoutEmpty(Committed(j),Committed(i))
 
-ByzCommitted(r) ==
-    SubSeq(log[r], 1, byzCommitIndex[r])
+Audited(r) ==
+    SubSeq(log[r], 1, auditIndex[r])
 
-\* Variant of LogInv for the byzantine commit index and correct replicas only
+\* Variant of LogInv for the audit index and correct replicas only
 \* We make no assertions about the state of byzantine replicas
-ByzLogInv ==
+AuditLogInv ==
     \A i, j \in CR :
-        \/ IsPrefix(ByzCommitted(i),ByzCommitted(j)) 
-        \/ IsPrefix(ByzCommitted(j),ByzCommitted(i))
+        \/ IsPrefix(Audited(i),Audited(j)) 
+        \/ IsPrefix(Audited(j),Audited(i))
 
 \* If no byzantine actions have been taken, then each replica only appends to its committed log
 \* Note that this invariant allows empty blocks (sent at the start of a view) to be rolled back
@@ -640,14 +640,14 @@ CommittedLogAppendOnlyProp ==
         \A i \in R :
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
-MonotonicByzCommittedIndexdProp ==
+MonotonicAuditedIndexdProp ==
     [][\A i \in CR :
-        byzCommitIndex[i] <= byzCommitIndex'[i]]_vars
+        auditIndex[i] <= auditIndex'[i]]_vars
 
-\* Each correct replica only appends to its byzantine committed log
-ByzCommittedLogAppendOnlyProp ==
+\* Each correct replica only appends to its audited log
+AuditedLogAppendOnlyProp ==
     [][\A i \in CR :
-        IsPrefix(ByzCommitted(i), ByzCommitted(i)')]_vars
+        IsPrefix(Audited(i), Audited(i)')]_vars
 
 \* At most one correct replica is primary in a view
 OneLeaderPerTermInv ==
@@ -657,8 +657,8 @@ OneLeaderPerTermInv ==
 
 IndexBoundsInv ==
     \A r \in CR :
-        /\ crashCommitIndex[r] <= Len(log[r])
-        /\ byzCommitIndex[r] <= crashCommitIndex[r]
+        /\ commitIndex[r] <= Len(log[r])
+        /\ auditIndex[r] <= commitIndex[r]
 
 WellFormedLogInv ==
     \A r \in CR : WellFormedLog(log[r])

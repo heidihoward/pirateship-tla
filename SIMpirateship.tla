@@ -39,7 +39,7 @@ StatsHighestUnanimity(l, i, r) ==
 StatsCollect(r, bci) ==
     TLCGetAndSet(StatsFastPath, 
             LAMBDA old, val: [ sum |-> old.sum + val, obs |-> old.obs + 1 ], 
-            byzCommitIndex'[r] - Max2(byzCommitIndex[r], bci), 
+            auditIndex'[r] - Max2(auditIndex[r], bci), 
             [sum |-> 0, obs |-> 0]
     ) \in [sum : Nat, obs : Nat] \* Always evaluate/equal to TRUE.
 
