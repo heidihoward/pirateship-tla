@@ -9,7 +9,7 @@ TLCInit ==
     \/ /\ view = [r \in R |-> 0]
        /\ byzActions = 0
        /\ network = [r \in R |-> [s \in R |-> <<>>]]
-       /\ byzCommitIndex = [r \in R |-> 2]
+       /\ auditIndex = [r \in R |-> 2]
        /\ \E p \in R:
              /\ primary = [ r \in R |-> r = p ]
              /\ viewStable = primary \* Identical to primary at startup.
@@ -40,16 +40,16 @@ CrashCommitIndex2AtLevel ==
     Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 2, "CrashCommitIndex2AtLevel", TLCGet("level"))
 
 ByzCommitIndexAt1 ==
-   Monitors!TLCMonitor(\A r \in HR: byzCommitIndex[r] = 1, "ByzCommitIndex@1")
+   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 1, "ByzCommitIndex@1")
 
 ByzCommitIndexAt2 ==
-   Monitors!TLCMonitor(\A r \in HR: byzCommitIndex[r] = 2, "ByzCommitIndex@2")
+   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 2, "ByzCommitIndex@2")
 
 ByzCommitIndex1AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: byzCommitIndex[r] = 1, "ByzCommitIndex1AtLevel", TLCGet("level"))
+    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 1, "ByzCommitIndex1AtLevel", TLCGet("level"))
 
 ByzCommitIndex2AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: byzCommitIndex[r] = 2, "ByzCommitIndex2AtLevel", TLCGet("level"))
+    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 2, "ByzCommitIndex2AtLevel", TLCGet("level"))
 
 MonitorPostcondition ==
     Monitors!TLCCheckMonitors
@@ -64,7 +64,7 @@ DebugCrashCommitIndex ==
     \E i \in Range(commitIndex): i < 2
 
 DebugByzCommitIndex ==
-    \* For all replicas, byzCommitIndex is always less than two.
-    \E i \in Range(byzCommitIndex): i < 2
+    \* For all replicas, auditIndex is always less than two.
+    \E i \in Range(auditIndex): i < 2
 
 =====
