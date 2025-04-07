@@ -27,29 +27,29 @@ TLCInit ==
 
 Monitors == INSTANCE TLCMonitor WITH TLCMonitorMagicNumber <- 0
 
-CrashCommitIndexAt1 ==
-   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 1, "CrashCommitIndex@1")
+CommitIndexAt1 ==
+   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 1, "CommitIndex@1")
 
-CrashCommitIndexAt2 ==
-   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 2, "CrashCommitIndex@2")
+CommitIndexAt2 ==
+   Monitors!TLCMonitor(\A r \in HR: commitIndex[r] = 2, "CommitIndex@2")
 
-CrashCommitIndex1AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 1, "CrashCommitIndex1AtLevel", TLCGet("level"))
+CommitIndex1AtLevel ==
+    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 1, "CommitIndex1AtLevel", TLCGet("level"))
 
-CrashCommitIndex2AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 2, "CrashCommitIndex2AtLevel", TLCGet("level"))
+CommitIndex2AtLevel ==
+    Monitors!TLCMonitorMin(\A r \in HR: commitIndex[r] = 2, "CommitIndex2AtLevel", TLCGet("level"))
 
-ByzCommitIndexAt1 ==
-   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 1, "ByzCommitIndex@1")
+AuditIndexAt1 ==
+   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 1, "AuditIndex@1")
 
-ByzCommitIndexAt2 ==
-   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 2, "ByzCommitIndex@2")
+AuditIndexAt2 ==
+   Monitors!TLCMonitor(\A r \in HR: auditIndex[r] = 2, "AuditIndex@2")
 
-ByzCommitIndex1AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 1, "ByzCommitIndex1AtLevel", TLCGet("level"))
+AuditIndex1AtLevel ==
+    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 1, "AuditIndex1AtLevel", TLCGet("level"))
 
-ByzCommitIndex2AtLevel ==
-    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 2, "ByzCommitIndex2AtLevel", TLCGet("level"))
+AuditIndex2AtLevel ==
+    Monitors!TLCMonitorMin(\A r \in HR: auditIndex[r] = 2, "AuditIndex2AtLevel", TLCGet("level"))
 
 MonitorPostcondition ==
     Monitors!TLCCheckMonitors
@@ -59,11 +59,11 @@ PrintMonitors ==
 
 -----
 
-DebugCrashCommitIndex ==
+DebugCommitIndex ==
     \* For all replicas, commitIndex is always less than two.
     \E i \in Range(commitIndex): i < 2
 
-DebugByzCommitIndex ==
+DebugAuditIndex ==
     \* For all replicas, auditIndex is always less than two.
     \E i \in Range(auditIndex): i < 2
 

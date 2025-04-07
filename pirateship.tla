@@ -280,7 +280,7 @@ ReceiveEntries(r, p) ==
     \* replica updates its commit index provided the new commit index is greater than the current one
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
-    \* assumes that a replica can safely byz commit if there's a quorum certificate over a quorum certificate
+    \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
     \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
@@ -319,7 +319,7 @@ ReceiveNewView(r, p) ==
             ])
         ]
     \* replica must update its commit index
-    \* Crash commit index may be decreased if there's been an byz attack
+    \* Commit index may be decreased if there's been an byz attack
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
     /\ UNCHANGED <<byzActions, auditIndex>>
 
@@ -477,7 +477,7 @@ BecomePrimary(r) ==
     \* replica becomes a primary
     /\ primary' = [primary EXCEPT ![r] = TRUE]
     \* primary updates its commit indexes
-    \* Crash commit index may be decreased if there's been an byz attack
+    \* Commit index may be decreased if there's been an byz attack
     /\ commitIndex' = [commitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
     /\ UNCHANGED <<view, byzActions, auditIndex, viewStable>>
@@ -615,7 +615,7 @@ IsPrefixWithoutEmpty(p, l) ==
 \* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
-\* LogInv implies that the byzantine committed logs of replicas are prefixes too, 
+\* LogInv implies that the audited logs of replicas are prefixes too, 
 \* as IndexBoundsInv ensures that the auditIndex is always less than or equal to the commitIndex.
 LogInv ==
     byzActions = 0 =>
@@ -623,15 +623,15 @@ LogInv ==
             \/ IsPrefixWithoutEmpty(Committed(i),Committed(j)) 
             \/ IsPrefixWithoutEmpty(Committed(j),Committed(i))
 
-ByzCommitted(r) ==
+Audited(r) ==
     SubSeq(log[r], 1, auditIndex[r])
 
 \* Variant of LogInv for the audit index and correct replicas only
 \* We make no assertions about the state of byzantine replicas
-ByzLogInv ==
+AuditLogInv ==
     \A i, j \in CR :
-        \/ IsPrefix(ByzCommitted(i),ByzCommitted(j)) 
-        \/ IsPrefix(ByzCommitted(j),ByzCommitted(i))
+        \/ IsPrefix(Audited(i),Audited(j)) 
+        \/ IsPrefix(Audited(j),Audited(i))
 
 \* If no byzantine actions have been taken, then each replica only appends to its committed log
 \* Note that this invariant allows empty blocks (sent at the start of a view) to be rolled back
@@ -640,14 +640,14 @@ CommittedLogAppendOnlyProp ==
         \A i \in R :
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
-MonotonicByzCommittedIndexdProp ==
+MonotonicAuditedIndexdProp ==
     [][\A i \in CR :
         auditIndex[i] <= auditIndex'[i]]_vars
 
-\* Each correct replica only appends to its byzantine committed log
-ByzCommittedLogAppendOnlyProp ==
+\* Each correct replica only appends to its audited log
+AuditedLogAppendOnlyProp ==
     [][\A i \in CR :
-        IsPrefix(ByzCommitted(i), ByzCommitted(i)')]_vars
+        IsPrefix(Audited(i), Audited(i)')]_vars
 
 \* At most one correct replica is primary in a view
 OneLeaderPerTermInv ==
