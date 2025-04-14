@@ -1,8 +1,7 @@
 ---- MODULE pirateship ----
 \* This is a TLA+ specification of the PirateShip consensus protocol.
-\* This spec does not model the fast path or platforms.
 \* For simplicity of the specification, message delivery is assumed to be ordered and reliable.
-\* Likewise, we also assume all transactions are signed.
+\* Likewise, we also assume all transactions are signed and do not model platforms.
 
 EXTENDS 
     \* TLA+ standard modules
