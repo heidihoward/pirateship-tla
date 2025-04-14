@@ -1,37 +1,38 @@
 ---- MODULE pirateship ----
-\* This is a specification of the PirateShip consensus protocol.
-\* Message delivery is assumed to be ordered and reliable
-\* This spec does not model the fast path or reconfiguration
-\* We also assume all txns are signed
+\* This is a TLA+ specification of the PirateShip consensus protocol.
+\* For simplicity of the specification, message delivery is assumed to be ordered and reliable.
+\* Likewise, we also assume all transactions are signed and do not model platforms.
 
 EXTENDS 
+    \* TLA+ standard modules
     Integers, 
     Sequences, 
-    FiniteSets, 
+    FiniteSets,
+    \* TLA+ community modules
     FiniteSetsExt, 
     SequencesExt
 
 ----
-\* Constants
+\*  CONSTANTS
 
-\* Set of replicas
+\* Set of all replicas
 CONSTANT R
 ASSUME R # {}
 
-\* Byzantine replicas
+\* Set of all Byzantine replicas
 CONSTANT BR
 ASSUME BR \subseteq R /\ Cardinality(R) >= 3*Cardinality(BR) + 1
 
-\* Set of possible transactions
+\* Set of all possible transactions
 CONSTANT Txs
 ASSUME Txs # {}
 
-\* Max number of byzantine actions
+\* Maximum number of byzantine actions across all replicas
 \* This parameter is completely artificial and is used to limit the state space
 CONSTANT MaxByzActions
 
 ----
-\* Variables
+\* VARIABLES
 
 VARIABLE
     \* messages in transit between any pair of replicas
@@ -53,6 +54,7 @@ VARIABLE
     \* (primary only) flag indicating if the primary has stabilized the view
     viewStable
 
+\* Sequence of all variables
 vars == <<
     network,
     view,  
@@ -65,7 +67,7 @@ vars == <<
     viewStable>>
 
 ----
-\* Helpers & Variable types
+\* HELPERS & VARIABLE TYPES
 
 \* Number of replicas
 N == Cardinality(R)
@@ -73,17 +75,19 @@ N == Cardinality(R)
 \* Set of quorums for crash fault tolerance (simple majority).
 CQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 2)}
 
-\* Set of quorums for byzantine fault tolerance (supermajority).
+\* Set of quorums for byzantine fault tolerance (super majority).
 BQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
 
-\* Honest replicas
+\* Set of honest replicas
 HR == R \ BR
 
+\* Set of all views
 Views ==  Nat
 
 ReplicaSeq ==
     CHOOSE s \in [ 1..N -> R ]: Range(s) = R
 
+\* The primary of view v
 Primary(v) ==
     ReplicaSeq[(v % N) + 1]
 
@@ -108,6 +112,7 @@ LogEntry == [
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
 Log == Seq(LogEntry)
 
+\* Set of all possible AppendEntries messages
 AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
@@ -116,38 +121,49 @@ AppendEntries == [
     \* that the replica has the parent of the log entry to append
     log: Log]
 
+\* Set of all possible Vote messages
 Votes == [
     type: {"Vote"},
     view: Views,
     \* As with AppendEntries, we send the entire log for the sake of the spec
     log: Log]
 
+\* Set of all possible ViewChange messages
 ViewChanges == [
     type: {"ViewChange"},
     view: Views,
     log: Log]
 
+\* Set of all possible NewView messages
 \* Currently, we use separate messages for NewView and AppendEntries, these could be merged
 NewViews == [
     type: {"NewView"},
     view: Views,
     log: Log]
 
-\* All possible messages
+\* Set of all possible messages
 Messages == 
     AppendEntries \union 
     Votes \union 
     ViewChanges \union 
     NewViews
 
-TypeOK == 
-    /\ viewStable \in [R -> BOOLEAN]
-    /\ view \in [R -> Views]
+LogTypeOK ==
     /\ log \in [R -> Log]
     /\ \A l \in Range(log):
         \A i \in DOMAIN l: l[i].byzQC = {} <=> l[i].byzQCVotes = {}
-    /\ \A r, s \in R:
-        \A i \in DOMAIN network[r][s]: network[r][s][i] \in Messages
+
+NetworkTypeOK ==
+    \A r, s \in R:
+        \A i \in DOMAIN network[r][s]: 
+            network[r][s][i] \in Messages
+
+\* Invariant to check the types of all variables
+TypeOK == 
+    /\ viewStable \in [R -> BOOLEAN]
+    /\ view \in [R -> Views]
+    /\ LogTypeOK
+    /\ NetworkTypeOK
     /\ primary \in [R -> BOOLEAN]
     /\ prepareQC \in [R -> [R -> Nat]]
     /\ commitIndex \in [R -> Nat]
@@ -155,7 +171,7 @@ TypeOK ==
     /\ byzActions \in Nat
 
 ----
-\* Initial states
+\* INITIAL STATES
 
 \* We begin in view 0 with a non-deterministically chosen replica as primary.
 Init == 
@@ -171,7 +187,7 @@ Init ==
     /\ viewStable = primary
 
 ----
-\* Actions
+\* ACTIONS
 
 IsByzQC(e) ==
     e.byzQC # {}
@@ -491,7 +507,7 @@ DiscardMessages ==
     /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
 
 ----
-\* Byzantine actions
+\* BYZANTINE ACTIONS
 \* Byzantine actions can only be taken by byzantine replicas (BR) and if there are byzantine actions left to take
 
 \* A byzantine replica might vote for an entry without actually appending it to its log.
@@ -575,7 +591,7 @@ Spec ==
     /\ Fairness
 
 ----
-\* Properties
+\* PROPERTIES
 
 \* Correct replicas are either honest or byzantine when no byzantine actions have been taken yet
 CR == IF byzActions = 0 THEN R ELSE HR
