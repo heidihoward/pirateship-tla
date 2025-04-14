@@ -72,11 +72,11 @@ vars == <<
 \* Number of replicas
 N == Cardinality(R)
 
-\* Set of quorums for crash fault tolerance (simple majority).
+\* Set of quorums for commitment (simple majority).
 CQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 2)}
 
-\* Set of quorums for byzantine fault tolerance (super majority).
-BQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
+\* Set of quorums for auditing (super majority).
+AQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
 
 \* Set of honest replicas
 HR == R \ BR
@@ -99,14 +99,14 @@ Primary(v) ==
 \* messages which would be discarded by honest replicas.
 QC == Nat
 
-\* Each log entry contains a view, a txn and optionally, quorum certificates for crash and byzantine faults
+\* Each log entry contains a view, a txn and optionally, quorum certificates for commitment and auditing
 LogEntry == [
     view: Views, 
     tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
-    byzQC: SUBSET QC,
-    byzQCVotes: BQ \cup {{}}, \* empty set iff byzQC is empty.
-    crashQC: SUBSET QC]
+    auditQC: SUBSET QC,
+    auditQCVotes: AQ \cup {{}}, \* empty set iff auditQC is empty.
+    commitQC: SUBSET QC]
 
 \* A log is a sequence of log entries. The index of the log entry is its sequence number/height
 \* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
@@ -151,7 +151,7 @@ Messages ==
 LogTypeOK ==
     /\ log \in [R -> Log]
     /\ \A l \in Range(log):
-        \A i \in DOMAIN l: l[i].byzQC = {} <=> l[i].byzQCVotes = {}
+        \A i \in DOMAIN l: l[i].auditQC = {} <=> l[i].auditQCVotes = {}
 
 NetworkTypeOK ==
     \A r, s \in R:
@@ -189,33 +189,33 @@ Init ==
 ----
 \* ACTIONS
 
-IsByzQC(e) ==
-    e.byzQC # {}
+IsAuditQC(e) ==
+    e.auditQC # {}
 
-IsCrashQC(e) ==
-    e.crashQC # {}
+IsCommitQC(e) ==
+    e.commitQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a crashQC, 0 if the log contains no crashQCs
-HighestCrashQC(l) ==
-    LET idx == SelectLastInSeq(l, IsCrashQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].crashQC)
+\* Given a log l, returns the index of the highest log entry with a commitQC, 0 if the log contains no commitQCs
+HighestCommitQC(l) ==
+    LET idx == SelectLastInSeq(l, IsCommitQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].commitQC)
 
-\* Given a log l, returns the index of the highest log entry with a byzQC, 0 if the log contains no byzQCs
+\* Given a log l, returns the index of the highest log entry with a auditQC, 0 if the log contains no auditQCs
 \* Compare: src/consensus/log.rs#Log
-HighestByzQC(l) ==
-    LET idx == SelectLastInSeq(l, IsByzQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
+HighestAuditQC(l) ==
+    LET idx == SelectLastInSeq(l, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
 
-\* Given a log l, returns the index of the highest log entry with a byzQC over a byzQC
+\* Given a log l, returns the index of the highest log entry with a auditQC over a auditQC
 \* Compare: src/consensus/log.rs#Log
 HighestQCOverQC(l) ==
-    LET lidx == HighestByzQC(l)
-        idx == SelectLastInSubSeq(l, 1, lidx, IsByzQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].byzQC)
+    LET lidx == HighestAuditQC(l)
+        idx == SelectLastInSubSeq(l, 1, lidx, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
 
 \* Given a log l, this operator returns the highest index of a log entry for which a *Quorum Certificate* (QC)
 \* exists. Note, the index of the log entry with the QC corresponds to a higher log index than the returned
-\* index. This QC is formed by unanimous **byzQCVotes** from replicas.
+\* index. This QC is formed by unanimous **auditQCVotes** from replicas.
 \* Since a vote by a replica r for some index n implicitly serves as a vote for all log entries at index b and
 \* below, the returned highest index might not have directly received a unanimous vote.  Instead, replicas may
 \* have voted for this index transitively by voting for higher indices.
@@ -225,12 +225,12 @@ HighestUnanimity(l, idx, r) ==
     \* Traverse the log *backwards* and record the replicas that have voted for the current idx or higher 
     \* indices (see V).
     LET \* Include r's vote in V of 1..i if r voted for index i.
-        V(S, i) == S \cup l[i].byzQCVotes \cup IF i <= idx THEN {r} ELSE {}
+        V(S, i) == S \cup l[i].auditQCVotes \cup IF i <= idx THEN {r} ELSE {}
         RECURSIVE RUnanimity(_,_)
         RUnanimity(i, S) ==
             IF i = 0 THEN {0}
             ELSE IF V(S, i) = R 
-                 THEN l[i].byzQC
+                 THEN l[i].auditQC
                  ELSE RUnanimity(i-1, V(S, i))
     IN RUnanimity(Len(l), {})
 
@@ -250,22 +250,22 @@ WellFormedLog(l) ==
     \A i \in DOMAIN l :
         \* check views are monotonically increasing
         /\ i > 1 => l[i-1].view <= l[i].view
-        \* check byzQCs are well formed
-        /\ \A q \in l[i].byzQC :
-            \* byzQCs are always for previous entries
+        \* check auditQCs are well formed
+        /\ \A q \in l[i].auditQC :
+            \* auditQCs are always for previous entries
             /\ q < i
-            \* byzQCs are always formed in the current view 
+            \* auditQCs are always formed in the current view 
             /\ l[q].view = l[i].view
-            \* byzQCs are in increasing order
+            \* auditQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].byzQC: qj < q
-        \* check crashQCs are well formed
-        /\ \A q \in l[i].crashQC :
-            \* crashQCs are always for previous entries
+                \A qj \in l[j].auditQC: qj < q
+        \* check commitQCs are well formed
+        /\ \A q \in l[i].commitQC :
+            \* commitQCs are always for previous entries
             /\ q < i
-            \* crashQCs are in increasing order
+            \* commitQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].crashQC: qj < q
+                \A qj \in l[j].commitQC: qj < q
 
 \* Replica r handling AppendEntries from primary p
 \* Compare: src/consensus/steady_state.rs#do_append_entries
@@ -295,7 +295,7 @@ ReceiveEntries(r, p) ==
         ]
     \* replica updates its commit index provided the new commit index is greater than the current one
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
-    /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCrashQC(log'[r]))]
+    /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(log'[r]))]
     \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
     \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
@@ -340,10 +340,10 @@ ReceiveNewView(r, p) ==
     /\ UNCHANGED <<byzActions, auditIndex>>
 
 \* True iff primary p is in a stable view
-\* A view is stable when a byzantine quorum have the view's first log entry
+\* A view is stable when a audit quorum have the view's first log entry
 CheckViewStability(p) ==
     LET inView(e) == e.view=view[p] IN
-    \E Q \in BQ: 
+    \E Q \in AQ: 
         \A q \in Q: 
             prepareQC'[p][q] >= SelectInSeq(log[p], inView)
 
@@ -370,21 +370,21 @@ ReceiveVote(p, r) ==
             /\ commitIndex' = [commitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
             \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
-            /\ LET bci == HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0)))
+            /\ LET bci == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
                    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
                    bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
                IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<commitIndex, auditIndex>>
     /\ UNCHANGED <<view, log, primary, byzActions>>
 
-MaxCrashQC(l,p) ==
-    IF commitIndex[p] > HighestCrashQC(l)
+MaxCommitQC(l,p) ==
+    IF commitIndex[p] > HighestCommitQC(l)
     THEN {commitIndex[p]}
     ELSE {}
 
-MaxByzQC(l, m) == 
-    LET idx == MaxQuorum(BQ, l, m, 0) IN
-    IF idx > HighestByzQC(l)
+MaxAuditQC(l, m) == 
+    LET idx == MaxQuorum(AQ, l, m, 0) IN
+    IF idx > HighestAuditQC(l)
     THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
     ELSE [n |-> {}, v |-> {}]
 
@@ -399,14 +399,14 @@ SendEntries(p) ==
         \* primary will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
-        /\ LET qc == MaxByzQC(log[p], prepareQC'[p]) IN
+        /\ LET qc == MaxAuditQC(log[p], prepareQC'[p]) IN
            log' = [log EXCEPT ![p] = Append(@, [
             view |-> view[p],
             \* for simplicity, each txn batch includes a single txn
             tx |-> <<tx>>,
-            crashQC |-> MaxCrashQC(log[p], p),
-            byzQC |-> qc.n,
-            byzQCVotes |-> qc.v])]
+            commitQC |-> MaxCommitQC(log[p], p),
+            auditQC |-> qc.n,
+            auditQCVotes |-> qc.v])]
         /\ network' = 
             [r \in R |-> [s \in R |->
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
@@ -432,9 +432,9 @@ Timeout(r) ==
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, commitIndex, auditIndex, byzActions>>
 
-\* The view of the highest byzQC in log l, -1 if log contains no qcs
+\* The view of the highest auditQC in log l, -1 if log contains no qcs
 HighestQCView(l) == 
-    LET idx == HighestByzQC(l) IN
+    LET idx == HighestAuditQC(l) IN
     IF idx = 0 THEN -1 ELSE l[idx].view
 
 \* True if log l is valid log choice from the set of logs ls.
@@ -463,8 +463,8 @@ LogChoiceRule(l,ls) ==
 BecomePrimary(r) ==
     \* replica must be assigned the new view
     /\ r = Primary(view[r])
-    \* a byz quorum must have voted for the replica
-    /\ \E q \in BQ:
+    \* a audit quorum must have voted for the replica
+    /\ \E q \in AQ:
         /\ \A n \in q: 
             /\ network[r][n] # <<>>
             /\ Head(network[r][n]).type = "ViewChange"
@@ -476,9 +476,9 @@ BecomePrimary(r) ==
             /\ log' = [log EXCEPT ![r] = Append(l1, [
                 view |-> view[r],
                 tx |-> <<>>,
-                crashQC |-> {},
-                byzQC |-> {},
-                byzQCVotes |-> {}])]
+                commitQC |-> {},
+                auditQC |-> {},
+                auditQCVotes |-> {}])]
             /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
@@ -495,7 +495,7 @@ BecomePrimary(r) ==
     \* primary updates its commit indexes
     \* Commit index may be decreased if there's been an byz attack
     /\ commitIndex' = [commitIndex EXCEPT 
-        ![r] = Max2(Min2(@, Len(log'[r])), HighestCrashQC(log'[r]))]
+        ![r] = Max2(Min2(@, Len(log'[r])), HighestCommitQC(log'[r]))]
     /\ UNCHANGED <<view, byzActions, auditIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages

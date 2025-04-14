@@ -32,7 +32,7 @@ StatsHighestUnanimity(l, i, r) ==
     \* No fast path
     IF fastPath = 1 THEN {0}
     \* Non-transitive fast path, i.e, one unanimous QC.
-    ELSE IF fastPath = 2 THEN LET idx == SelectLastInSeq(l, LAMBDA e: e.byzQCVotes = R) IN IF idx = 0 THEN {0} ELSE l[idx].byzQC
+    ELSE IF fastPath = 2 THEN LET idx == SelectLastInSeq(l, LAMBDA e: e.auditQCVotes = R) IN IF idx = 0 THEN {0} ELSE l[idx].auditQC
     \* Transitive fast path, i.e., combined votes from all applicable QCs.
     ELSE HighestUnanimity(l, i, r)
 
@@ -45,7 +45,7 @@ StatsCollect(r, bci) ==
 
 StatsReceiveVote(p, r) ==
     /\ ReceiveVote(p, r)
-    /\ StatsCollect(p, HighestByzQC(SubSeq(log[p], 1, MaxQuorum(BQ, log[p], prepareQC'[p], 0))))
+    /\ StatsCollect(p, HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0))))
 
 StatsReceiveEntries(r, p) ==
     /\ ReceiveEntries(r, p)
