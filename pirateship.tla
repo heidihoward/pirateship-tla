@@ -1,7 +1,7 @@
 ---- MODULE pirateship ----
 \* This is a TLA+ specification of the PirateShip consensus protocol.
 \* For simplicity of the specification, message delivery is assumed to be ordered and reliable.
-\* Likewise, we also assume all transactions are signed and do not model platforms.
+\* Likewise, we also assume all transactions are signed.
 
 EXTENDS 
     \* TLA+ standard modules
@@ -503,7 +503,9 @@ BecomePrimary(r) ==
 \* so a replica may need to discard an out-of-date message to process a more recent one
 DiscardMessages ==
     /\ \E s,r \in R:
-            network' = [network EXCEPT ![r][s] = SelectSeq(@, LAMBDA m: ~(m.view < view[r] \/ (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
+            network' = [network EXCEPT ![r][s] = SelectSeq(@, 
+                LAMBDA m: ~(m.view < view[r] \/ 
+                    (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
     /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
 
 ----
@@ -563,7 +565,7 @@ Next ==
     \/ DiscardMessages
     \/ \E r \in BR:
         \/ ByzPrimaryEquivocate(r)
-        \/ \E s \in R: \* TODO CR because we don't need byz replicas to receive messages from other byz replicas?!
+        \/ \E s \in R: \* Could be CR because we don't need byz replicas to receive messages from other byz replicas
             ByzOmitEntries(r,s)
     \/ \E r \in R: 
         \/ SendEntries(r)
@@ -656,6 +658,7 @@ CommittedLogAppendOnlyProp ==
         \A i \in R :
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
+\* All correct replicas only append to their audited logs
 MonotonicAuditedIndexdProp ==
     [][\A i \in CR :
         auditIndex[i] <= auditIndex'[i]]_vars
@@ -671,11 +674,14 @@ OneLeaderPerTermInv ==
         view[r] = v /\ primary[r] 
         => \A s \in R \ {r} : view[s] = v => ~primary[s]
 
+\* The commit and audit indexes are within bounds
+\* The audit index is always less than or equal to the commit index
 IndexBoundsInv ==
     \A r \in CR :
         /\ commitIndex[r] <= Len(log[r])
         /\ auditIndex[r] <= commitIndex[r]
 
+\* The log of each replica is well formed
 WellFormedLogInv ==
     \A r \in CR : WellFormedLog(log[r])
 
